@@ -1,0 +1,169 @@
+import config from '../config/index.js';
+import fetch from 'node-fetch';
+
+class AIProvider {
+  constructor(name, apiConfig) {
+    this.name = name;
+    this.apiConfig = apiConfig;
+    this.stats = {
+      calls: 0,
+      errors: 0,
+      avgLatency: 0,
+      lastUsed: null
+    };
+  }
+
+  async generate(messages, options = {}) {
+    const startTime = Date.now();
+    
+    try {
+      const response = await fetch(`${this.apiConfig.baseURL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiConfig.apiKey}`
+        },
+        body: JSON.stringify({
+          model: this.apiConfig.model,
+          messages,
+          temperature: options.temperature || 0.7,
+          max_tokens: options.maxTokens || 2000,
+          stream: false
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const latency = Date.now() - startTime;
+      
+      this.updateStats(latency, true);
+      
+      return {
+        success: true,
+        content: data.choices[0].message.content,
+        model: this.name,
+        latency
+      };
+    } catch (error) {
+      const latency = Date.now() - startTime;
+      this.updateStats(latency, false);
+      
+      return {
+        success: false,
+        error: error.message,
+        model: this.name,
+        latency
+      };
+    }
+  }
+
+  updateStats(latency, success) {
+    this.stats.calls++;
+    if (!success) this.stats.errors++;
+    
+    // 指数加权移动平均
+    this.stats.avgLatency = this.stats.avgLatency 
+      ? 0.7 * this.stats.avgLatency + 0.3 * latency
+      : latency;
+    
+    this.stats.lastUsed = new Date();
+  }
+
+  getStats() {
+    return {
+      name: this.name,
+      ...this.stats,
+      successRate: this.stats.calls > 0 
+        ? ((this.stats.calls - this.stats.errors) / this.stats.calls * 100).toFixed(2) + '%'
+        : 'N/A'
+    };
+  }
+}
+
+// 模型管理器
+class ModelManager {
+  constructor() {
+    this.models = new Map();
+    this.currentMode = 'auto'; // 'auto', 'deepseek', 'qwen'
+    this.initModels();
+  }
+
+  initModels() {
+    // 初始化DeepSeek
+    if (config.ai.deepseek.apiKey) {
+      this.models.set('deepseek', new AIProvider('deepseek', config.ai.deepseek));
+    }
+    
+    // 初始化千问
+    if (config.ai.qwen.apiKey) {
+      this.models.set('qwen', new AIProvider('qwen', config.ai.qwen));
+    }
+  }
+
+  setMode(mode) {
+    if (mode === 'auto' || this.models.has(mode)) {
+      this.currentMode = mode;
+      return true;
+    }
+    return false;
+  }
+
+  selectModel(prompt) {
+    if (this.currentMode !== 'auto') {
+      return this.models.get(this.currentMode);
+    }
+
+    // 自动选择策略：基于延迟和成功率
+    const availableModels = Array.from(this.models.values())
+      .filter(m => m.stats.calls === 0 || m.stats.errors / m.stats.calls < 0.5);
+
+    if (availableModels.length === 0) {
+      return this.models.values().next().value;
+    }
+
+    // 选择延迟最低的模型
+    return availableModels.reduce((best, current) => {
+      if (current.stats.avgLatency === 0) return current;
+      if (best.stats.avgLatency === 0) return best;
+      return current.stats.avgLatency < best.stats.avgLatency ? current : best;
+    });
+  }
+
+  async chat(messages, options = {}) {
+    const model = this.selectModel(messages[messages.length - 1]?.content || '');
+    
+    if (!model) {
+      throw new Error('No available AI model');
+    }
+
+    const result = await model.generate(messages, options);
+    
+    // 如果失败且是自动模式，尝试备用模型
+    if (!result.success && this.currentMode === 'auto') {
+      const backupModel = Array.from(this.models.values())
+        .find(m => m !== model);
+      
+      if (backupModel) {
+        return await backupModel.generate(messages, options);
+      }
+    }
+
+    return result;
+  }
+
+  getAvailableModels() {
+    return Array.from(this.models.keys());
+  }
+
+  getStats() {
+    return {
+      currentMode: this.currentMode,
+      models: Array.from(this.models.values()).map(m => m.getStats())
+    };
+  }
+}
+
+export default new ModelManager();

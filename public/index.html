@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Crypto AI Analyzer - 加密交易分析助手</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- 侧边栏 -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h2>历史记录</h2>
+        <button class="btn-icon" id="newChatBtn" title="新对话">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="sessions-list" id="sessionsList">
+        <!-- 动态加载 -->
+      </div>
+    </aside>
+
+    <!-- 主内容区 -->
+    <main class="main-content">
+      <!-- 顶部栏 -->
+      <header class="header">
+        <button class="btn-icon menu-toggle" id="menuToggle">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+        <h1>Crypto AI Analyzer</h1>
+        <div class="model-selector">
+          <select id="modelSelect">
+            <option value="auto">自动切换</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="qwen">千问</option>
+          </select>
+        </div>
+      </header>
+
+      <!-- 聊天区域 -->
+      <div class="chat-container" id="chatContainer">
+        <div class="welcome-message" id="welcomeMessage">
+          <div class="welcome-icon">💬</div>
+          <h2>Hi，我是您的加密交易助手</h2>
+          <p>可以帮您查询实时价格、分析市场趋势、提供交易建议</p>
+          <div class="quick-actions">
+            <button class="quick-btn" data-prompt="BTC当前价格是多少？">BTC价格</button>
+            <button class="quick-btn" data-prompt="分析ETH的技术指标">ETH分析</button>
+            <button class="quick-btn" data-prompt="当前热门币种有哪些？">热门币种</button>
+            <button class="quick-btn" data-prompt="BTC的资金费率是多少？">资金费率</button>
+          </div>
+        </div>
+        <div class="messages" id="messages"></div>
+      </div>
+
+      <!-- 输入区域 -->
+      <div class="input-container">
+        <div class="input-wrapper">
+          <textarea 
+            id="messageInput" 
+            placeholder="请输入您的问题..." 
+            rows="1"
+          ></textarea>
+          <button class="btn-send" id="sendBtn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Markdown 渲染库 -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

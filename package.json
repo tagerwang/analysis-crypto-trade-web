@@ -5,6 +5,8 @@
   "type": "module",
   "main": "src/server.js",
   "scripts": {
+    "pm2": "pm2 start ecosystem.config.cjs",
+    "deploy": "./deploy-to-server.sh",
     "start": "node src/server.js",
     "dev": "node --watch src/server.js"
   },

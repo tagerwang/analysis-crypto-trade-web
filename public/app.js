@@ -269,9 +269,11 @@ class CryptoAIApp {
     this.messageInput.style.height = 'auto';
 
     // 显示加载状态
-    this.showLoading();
     this.isLoading = true;
     this.sendBtn.disabled = true;
+
+    // 创建AI消息容器
+    const aiMessageDiv = this.createStreamingMessage();
 
     try {
       const response = await fetch('./api/chat', {
@@ -280,50 +282,123 @@ class CryptoAIApp {
         body: JSON.stringify({
           sessionId: this.currentSessionId,
           message,
-          model: this.currentModel
+          model: this.currentModel,
+          stream: true
         })
       });
 
-      // 检查HTTP状态
       if (!response.ok) {
         throw new Error(`服务器错误 (${response.status})`);
       }
 
-      // 检查响应类型
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text();
-        console.error('非JSON响应:', text.substring(0, 200));
-        throw new Error('服务器返回了非JSON响应，请稍后重试');
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullContent = '';
+      let currentModel = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.trim() || !line.startsWith('data: ')) continue;
+          
+          try {
+            const data = JSON.parse(line.slice(6));
+            
+            if (data.type === 'start') {
+              this.currentSessionId = data.sessionId;
+            } else if (data.type === 'content') {
+              fullContent += data.content;
+              currentModel = data.model;
+              this.updateStreamingMessage(aiMessageDiv, fullContent, currentModel);
+            } else if (data.type === 'tool_start') {
+              this.showToolIndicator(aiMessageDiv, '正在调用工具...');
+            } else if (data.type === 'tool_done') {
+              this.hideToolIndicator(aiMessageDiv);
+            } else if (data.type === 'done') {
+              this.finalizeStreamingMessage(aiMessageDiv, currentModel);
+            } else if (data.type === 'error') {
+              throw new Error(data.error);
+            }
+          } catch (e) {
+            console.error('Parse error:', e, line);
+          }
+        }
       }
 
-      const data = await response.json();
-
-      if (data.success) {
-        this.currentSessionId = data.sessionId;
-        this.hideLoading();
-        this.addMessage('assistant', data.message.content, data.model);
-        this.loadSessions(); // 刷新会话列表
-      } else {
-        throw new Error(data.error || '未知错误');
-      }
+      this.loadSessions(); // 刷新会话列表
     } catch (error) {
-      this.hideLoading();
       console.error('Chat error:', error);
       
       let errorMessage = error.message;
-      if (error.message.includes('JSON')) {
-        errorMessage = '服务器响应异常，请稍后重试';
-      } else if (error.message.includes('Failed to fetch')) {
+      if (error.message.includes('Failed to fetch')) {
         errorMessage = '网络连接失败，请检查网络';
       }
       
+      aiMessageDiv.remove();
       this.addMessage('assistant', `❌ 错误：${errorMessage}`, 'error');
     } finally {
       this.isLoading = false;
       this.sendBtn.disabled = false;
       this.messageInput.focus();
     }
+  }
+
+  createStreamingMessage() {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message assistant streaming';
+    messageDiv.innerHTML = `
+      <div class="message-header">
+        <span class="message-role">AI助手</span>
+        <span class="message-model"></span>
+      </div>
+      <div class="message-content"></div>
+      <div class="tool-indicator" style="display: none;">
+        <div class="loading-dots">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <span class="tool-text"></span>
+      </div>
+    `;
+    this.messages.appendChild(messageDiv);
+    this.scrollToBottom();
+    return messageDiv;
+  }
+
+  updateStreamingMessage(messageDiv, content, model) {
+    const contentDiv = messageDiv.querySelector('.message-content');
+    const modelSpan = messageDiv.querySelector('.message-model');
+    
+    contentDiv.innerHTML = this.formatContent(content);
+    if (model) {
+      modelSpan.textContent = this.getModelDisplayName(model);
+    }
+    
+    this.scrollToBottom();
+  }
+
+  showToolIndicator(messageDiv, text) {
+    const indicator = messageDiv.querySelector('.tool-indicator');
+    const textSpan = messageDiv.querySelector('.tool-text');
+    indicator.style.display = 'flex';
+    textSpan.textContent = text;
+  }
+
+  hideToolIndicator(messageDiv) {
+    const indicator = messageDiv.querySelector('.tool-indicator');
+    indicator.style.display = 'none';
+  }
+
+  finalizeStreamingMessage(messageDiv, model) {
+    messageDiv.classList.remove('streaming');
   }
 
   addMessage(role, content, model = null) {
@@ -357,34 +432,83 @@ class CryptoAIApp {
 
   formatContent(content) {
     // 使用 marked.js 渲染 Markdown
-    if (typeof marked !== 'undefined') {
-      // 配置 marked
-      marked.setOptions({
-        breaks: true,  // 支持 GFM 换行
-        gfm: true,     // 启用 GitHub Flavored Markdown
-        tables: true,  // 支持表格
-        sanitize: false,
-        headerIds: false,
-        mangle: false
-      });
-      
+    if (typeof marked !== 'undefined' && marked.parse) {
       try {
-        return marked.parse(content);
+        // 配置 marked
+        if (marked.setOptions) {
+          marked.setOptions({
+            breaks: true,
+            gfm: true,
+            headerIds: false,
+            mangle: false
+          });
+        }
+        
+        const html = marked.parse(content);
+        return html;
       } catch (e) {
         console.error('Markdown 解析错误:', e);
-        return content.replace(/\n/g, '<br>');
+        return this.fallbackFormat(content);
       }
     }
     
+    console.warn('marked.js 未加载，使用降级方案');
+    return this.fallbackFormat(content);
+  }
+
+  fallbackFormat(content) {
     // 降级方案：简单的格式化
-    let formatted = content
-      .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-      .replace(/\n/g, '<br>');
+    let formatted = content;
+    
+    // 1. 处理表格（必须在其他处理之前）
+    formatted = this.formatTable(formatted);
+    
+    // 2. 代码块
+    formatted = formatted.replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>');
+    
+    // 3. 行内代码
+    formatted = formatted.replace(/`([^`]+)`/g, '<code>$1</code>');
+    
+    // 4. 粗体
+    formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    
+    // 5. 斜体
+    formatted = formatted.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    
+    // 6. 标题
+    formatted = formatted.replace(/^### (.*$)/gm, '<h3>$1</h3>');
+    formatted = formatted.replace(/^## (.*$)/gm, '<h2>$1</h2>');
+    formatted = formatted.replace(/^# (.*$)/gm, '<h1>$1</h1>');
+    
+    // 7. 列表
+    formatted = formatted.replace(/^\- (.*$)/gm, '<li>$1</li>');
+    formatted = formatted.replace(/(<li>.*?<\/li>\n?)+/gs, '<ul>$&</ul>');
+    
+    // 8. 段落和换行
+    formatted = formatted.replace(/\n\n/g, '</p><p>');
+    formatted = formatted.replace(/\n/g, '<br>');
     
     return formatted;
+  }
+
+  formatTable(content) {
+    // 匹配 Markdown 表格
+    const tableRegex = /\|(.+)\|\n\|[-:\s|]+\|\n((?:\|.+\|\n?)+)/g;
+    
+    return content.replace(tableRegex, (match, header, rows) => {
+      // 处理表头
+      const headers = header.split('|').map(h => h.trim()).filter(h => h);
+      const headerHTML = '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
+      
+      // 处理表格行
+      const rowsArray = rows.trim().split('\n');
+      const rowsHTML = rowsArray.map(row => {
+        const cells = row.split('|').map(c => c.trim()).filter(c => c);
+        return '<tr>' + cells.map(c => `<td>${c}</td>`).join('') + '</tr>';
+      }).join('');
+      
+      return `<table><thead>${headerHTML}</thead><tbody>${rowsHTML}</tbody></table>`;
+    });
   }
 
   showLoading() {

@@ -132,6 +132,134 @@ class ChatService {
     };
   }
 
+  async chatStream(sessionId, userMessage, onChunk, options = {}) {
+    // 获取或创建会话
+    if (!this.sessions.has(sessionId)) {
+      this.sessions.set(sessionId, []);
+    }
+    
+    const messages = this.sessions.get(sessionId);
+    
+    // 添加用户消息
+    messages.push({
+      role: 'user',
+      content: userMessage,
+      timestamp: new Date().toISOString()
+    });
+
+    // 构建系统提示词
+    const systemPrompt = this.buildSystemPrompt();
+    
+    // 准备AI消息
+    const aiMessages = [
+      { role: 'system', content: systemPrompt },
+      ...messages.slice(-10).map(m => ({ role: m.role, content: m.content }))
+    ];
+
+    let fullContent = '';
+    
+    // 流式调用AI模型
+    const result = await ModelManager.chatStream(aiMessages, (chunk) => {
+      if (chunk.type === 'content') {
+        fullContent += chunk.content;
+        onChunk(chunk);
+      }
+    }, options);
+
+    if (!result.success) {
+      throw new Error(result.error || 'AI request failed');
+    }
+
+    // 检查是否需要调用MCP工具
+    const toolCallPattern = /\[TOOL_CALL:(\w+):(\w+):(.*?)\]/g;
+    let match;
+    const toolCalls = [];
+    
+    while ((match = toolCallPattern.exec(fullContent)) !== null) {
+      toolCalls.push({
+        service: match[1],
+        tool: match[2],
+        args: match[3]
+      });
+    }
+
+    let finalContent = fullContent;
+
+    // 执行MCP工具调用
+    if (toolCalls.length > 0) {
+      onChunk({ type: 'tool_start', count: toolCalls.length });
+      
+      const toolResults = [];
+      
+      for (const call of toolCalls) {
+        try {
+          const args = JSON.parse(call.args);
+          const toolResult = await MCPService.callTool(call.service, call.tool, args);
+          toolResults.push({
+            call,
+            result: toolResult
+          });
+        } catch (error) {
+          toolResults.push({
+            call,
+            result: { success: false, error: error.message }
+          });
+        }
+      }
+
+      const toolResultsText = toolResults.map(tr => {
+        if (tr.result.success) {
+          return `工具调用成功 [${tr.call.service}:${tr.call.tool}]:\n${JSON.stringify(tr.result.data, null, 2)}`;
+        } else {
+          return `工具调用失败 [${tr.call.service}:${tr.call.tool}]: ${tr.result.error}`;
+        }
+      }).join('\n\n');
+
+      onChunk({ type: 'tool_done' });
+
+      // 再次流式调用AI
+      const followUpMessages = [
+        { role: 'system', content: systemPrompt },
+        ...messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
+        { role: 'assistant', content: fullContent },
+        { role: 'user', content: `工具执行结果：\n${toolResultsText}\n\n请基于以上数据，用简洁专业的方式回答用户的问题。不要再次调用工具。` }
+      ];
+
+      finalContent = '';
+      const followUpResult = await ModelManager.chatStream(followUpMessages, (chunk) => {
+        if (chunk.type === 'content') {
+          finalContent += chunk.content;
+          onChunk(chunk);
+        }
+      }, options);
+      
+      if (!followUpResult.success) {
+        finalContent = `我已经查询到以下信息：\n\n${toolResultsText}`;
+        onChunk({ type: 'content', content: finalContent });
+      }
+    }
+
+    // 添加AI回复
+    const assistantMessage = {
+      role: 'assistant',
+      content: finalContent,
+      model: result.model,
+      latency: result.latency,
+      timestamp: new Date().toISOString()
+    };
+    
+    messages.push(assistantMessage);
+
+    // 保存会话
+    await StorageService.saveChat(sessionId, messages);
+
+    return {
+      sessionId,
+      model: result.model,
+      latency: result.latency
+    };
+  }
+
   buildSystemPrompt() {
     const mcpTools = `
 ## 可用工具

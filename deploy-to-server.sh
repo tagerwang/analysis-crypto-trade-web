@@ -25,11 +25,18 @@ fi
 SERVER_USER=$(grep "^SERVER_USER=" .env | cut -d '=' -f2)
 SERVER_USER=${SERVER_USER:-root}
 
+# 读取新域名配置（如果有）
+NEW_DOMAINS=$(grep "^NEW_DOMAINS=" .env | cut -d '=' -f2)
+# 提取第一个域名作为主域名
+MAIN_DOMAIN=$(echo $NEW_DOMAINS | cut -d ',' -f1)
+# 如果没有配置新域名，使用BASE_DOMAIN
+MAIN_DOMAIN=${MAIN_DOMAIN:-$BASE_DOMAIN}
+
 APP_NAME="crypto-ai-analyzer"
 APP_PORT="3000"
 APP_PATH="/opt/crypto-ai-analyzer"
 NGINX_LOCATION="/crypto-ai"
-BASE_URL="https://${BASE_DOMAIN}/crypto-ai"
+BASE_URL="https://${MAIN_DOMAIN}"
 
 echo "🚀 开始部署加密货币AI助手到服务器..."
 echo "📍 目标地址: ${BASE_URL}"
@@ -137,34 +144,24 @@ fi
 echo ""
 
 # 6. 配置 Nginx 反向代理
-echo "🌐 步骤 6/6: 配置 Nginx 反向代理..."
-ssh $SERVER_USER@$SERVER_IP << 'ENDSSH'
+echo "🌐 步骤 6/6: 配置 Nginx 反向代理（支持流式输出）..."
+
+# 上传新的nginx配置
+echo "上传nginx配置文件..."
+scp example.com.nginx.conf $SERVER_USER@$SERVER_IP:/tmp/${MAIN_DOMAIN}.conf
+
+ssh $SERVER_USER@$SERVER_IP << ENDSSH
 # 备份原配置
-cp /etc/nginx/sites-available/mcp-crypto-api /etc/nginx/sites-available/mcp-crypto-api.bak
+if [ -f /etc/nginx/sites-available/${MAIN_DOMAIN} ]; then
+    cp /etc/nginx/sites-available/${MAIN_DOMAIN} /etc/nginx/sites-available/${MAIN_DOMAIN}.bak.\$(date +%Y%m%d_%H%M%S)
+fi
 
-# 添加新的 location 到现有配置
-cat > /tmp/crypto-ai-location.conf << 'EOF'
-    location /crypto-ai/ {
-        proxy_pass http://127.0.0.1:3000/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-    }
-EOF
+# 复制新配置
+cp /tmp/${MAIN_DOMAIN}.conf /etc/nginx/sites-available/${MAIN_DOMAIN}
 
-# 检查配置中是否已存在 crypto-ai location
-if grep -q "location /crypto-ai" /etc/nginx/sites-available/mcp-crypto-api; then
-    echo "Nginx 配置已存在，跳过添加"
-else
-    # 在最后一个 } 之前插入新的 location
-    sed -i '/^}$/i\    location /crypto-ai/ {\n        proxy_pass http://127.0.0.1:3000/;\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n        \n        proxy_connect_timeout 60s;\n        proxy_send_timeout 60s;\n        proxy_read_timeout 60s;\n    }\n' /etc/nginx/sites-available/mcp-crypto-api
-    
-    echo "Nginx 配置已更新"
+# 创建软链接（如果不存在）
+if [ ! -L /etc/nginx/sites-enabled/${MAIN_DOMAIN} ]; then
+    ln -s /etc/nginx/sites-available/${MAIN_DOMAIN} /etc/nginx/sites-enabled/
 fi
 
 # 测试配置
@@ -173,10 +170,9 @@ nginx -t
 if [ $? -eq 0 ]; then
     # 重载 Nginx
     systemctl reload nginx
-    echo "✅ Nginx 配置已重载"
+    echo "✅ Nginx 配置已重载（已启用流式输出支持）"
 else
-    echo "❌ Nginx 配置测试失败，恢复备份"
-    cp /etc/nginx/sites-available/mcp-crypto-api.bak /etc/nginx/sites-available/mcp-crypto-api
+    echo "❌ Nginx 配置测试失败"
     exit 1
 fi
 ENDSSH
@@ -194,7 +190,7 @@ echo "🧪 测试部署..."
 sleep 3
 
 echo "测试健康检查..."
-curl -s ${BASE_URL}/health | python3 -m json.tool 2>/dev/null || echo "健康检查失败"
+curl -s https://${MAIN_DOMAIN}/health | python3 -m json.tool 2>/dev/null || echo "等待服务启动..."
 
 echo ""
 echo "==================================="
@@ -202,7 +198,20 @@ echo "✅ 部署完成！"
 echo "==================================="
 echo ""
 echo "🌐 访问地址："
-echo "  ${BASE_URL}/"
+if [ -n "$NEW_DOMAINS" ]; then
+    # 如果配置了新域名，显示所有域名
+    IFS=',' read -ra DOMAINS <<< "$NEW_DOMAINS"
+    for domain in "${DOMAINS[@]}"; do
+        echo "  https://${domain}/"
+    done
+else
+    echo "  https://${BASE_DOMAIN}/"
+fi
+echo ""
+echo "✨ 新功能："
+echo "  - AI流式输出（实时显示回答）"
+echo "  - 优化响应速度"
+echo "  - 更好的用户体验"
 echo ""
 echo "📊 管理命令："
 echo "  查看日志: ssh root@$SERVER_IP 'pm2 logs $APP_NAME'"

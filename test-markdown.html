@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Markdown 表格测试</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: #1a1f2e;
+      color: #e8eaed;
+    }
+    table {
+      border-collapse: collapse;
+      margin: 20px 0;
+      width: 100%;
+      background: #0f1419;
+      border: 1px solid #2f3336;
+    }
+    th, td {
+      border: 1px solid #2f3336;
+      padding: 10px;
+      text-align: left;
+    }
+    th {
+      background: #252d3d;
+      font-weight: 600;
+    }
+    .test-input {
+      background: #252d3d;
+      color: #e8eaed;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <h1>Markdown 表格测试</h1>
+  
+  <h2>测试输入：</h2>
+  <div class="test-input" id="input"></div>
+  
+  <h2>渲染结果：</h2>
+  <div id="output"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+  <script>
+    const testContent = `| 币种 | 价格 | 24小时涨幅 | 交易量 |
+|------|------|------------|--------|
+| SENT/USDT | $0.0287 | +160.54% | $137.90M |
+| ENSO/USDT | $0.8650 | +52.83% | $15.74M |`;
+
+    document.getElementById('input').textContent = testContent;
+
+    // 测试 marked.js
+    if (typeof marked !== 'undefined') {
+      marked.setOptions({
+        breaks: true,
+        gfm: true,
+        headerIds: false,
+        mangle: false
+      });
+      
+      const html = marked.parse(testContent);
+      document.getElementById('output').innerHTML = html;
+      console.log('Marked.js 输出:', html);
+    } else {
+      document.getElementById('output').innerHTML = '<p style="color: red;">marked.js 未加载</p>';
+    }
+  </script>
+</body>
+</html>

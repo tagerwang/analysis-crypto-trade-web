@@ -20,10 +20,10 @@ function generateSessionId() {
   return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
-// API路由
+// API路由 - 流式输出
 app.post('/api/chat', async (req, res) => {
   try {
-    const { sessionId, message, model } = req.body;
+    const { sessionId, message, model, stream = true } = req.body;
     
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
@@ -36,18 +36,44 @@ app.post('/api/chat', async (req, res) => {
       ModelManager.setMode(model);
     }
 
-    const result = await ChatService.chat(sid, message);
-    
-    res.json({
-      success: true,
-      ...result
-    });
+    // 如果请求流式输出
+    if (stream) {
+      // 设置SSE响应头
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no'); // 禁用nginx缓冲
+
+      // 发送初始事件
+      res.write(`data: ${JSON.stringify({ type: 'start', sessionId: sid })}\n\n`);
+
+      // 流式处理
+      await ChatService.chatStream(sid, message, (chunk) => {
+        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+      });
+
+      // 发送结束事件
+      res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+      res.end();
+    } else {
+      // 非流式输出（保持兼容）
+      const result = await ChatService.chat(sid, message);
+      res.json({
+        success: true,
+        ...result
+      });
+    }
   } catch (error) {
     console.error('Chat error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    if (req.body.stream) {
+      res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+      res.end();
+    } else {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
   }
 });
 

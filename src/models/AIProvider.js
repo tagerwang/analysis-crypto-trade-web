@@ -60,6 +60,84 @@ class AIProvider {
     }
   }
 
+  async generateStream(messages, onChunk, options = {}) {
+    const startTime = Date.now();
+    
+    try {
+      const response = await fetch(`${this.apiConfig.baseURL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiConfig.apiKey}`
+        },
+        body: JSON.stringify({
+          model: this.apiConfig.model,
+          messages,
+          temperature: options.temperature || 0.7,
+          max_tokens: options.maxTokens || 2000,
+          stream: true
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      let fullContent = '';
+      const reader = response.body;
+      let buffer = '';
+
+      for await (const chunk of reader) {
+        buffer += chunk.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === 'data: [DONE]') continue;
+          
+          if (trimmed.startsWith('data: ')) {
+            try {
+              const json = JSON.parse(trimmed.slice(6));
+              const content = json.choices?.[0]?.delta?.content;
+              
+              if (content) {
+                fullContent += content;
+                onChunk({
+                  type: 'content',
+                  content,
+                  model: this.name
+                });
+              }
+            } catch (e) {
+              console.error('Parse error:', e, trimmed);
+            }
+          }
+        }
+      }
+
+      const latency = Date.now() - startTime;
+      this.updateStats(latency, true);
+      
+      return {
+        success: true,
+        content: fullContent,
+        model: this.name,
+        latency
+      };
+    } catch (error) {
+      const latency = Date.now() - startTime;
+      this.updateStats(latency, false);
+      
+      return {
+        success: false,
+        error: error.message,
+        model: this.name,
+        latency
+      };
+    }
+  }
+
   updateStats(latency, success) {
     this.stats.calls++;
     if (!success) this.stats.errors++;
@@ -148,6 +226,28 @@ class ModelManager {
       
       if (backupModel) {
         return await backupModel.generate(messages, options);
+      }
+    }
+
+    return result;
+  }
+
+  async chatStream(messages, onChunk, options = {}) {
+    const model = this.selectModel(messages[messages.length - 1]?.content || '');
+    
+    if (!model) {
+      throw new Error('No available AI model');
+    }
+
+    const result = await model.generateStream(messages, onChunk, options);
+    
+    // 如果失败且是自动模式，尝试备用模型
+    if (!result.success && this.currentMode === 'auto') {
+      const backupModel = Array.from(this.models.values())
+        .find(m => m !== model);
+      
+      if (backupModel) {
+        return await backupModel.generateStream(messages, onChunk, options);
       }
     }
 

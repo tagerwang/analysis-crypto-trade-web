@@ -275,7 +275,8 @@ export class DeepSeekProvider {
 export class QwenProvider {
   constructor(apiKey) {
     this.apiKey = apiKey;
-    this.baseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+    // this.baseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+    this.baseURL="https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
   }
 
   async generate(prompt, options = {}) {

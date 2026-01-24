@@ -1,7 +1,6 @@
 class CryptoAIApp {
   constructor() {
     this.currentSessionId = null;
-    this.currentModel = 'auto';
     this.isLoading = false;
     
     this.initElements();
@@ -21,6 +20,9 @@ class CryptoAIApp {
     this.messages = document.getElementById('messages');
     this.messageInput = document.getElementById('messageInput');
     this.sendBtn = document.getElementById('sendBtn');
+    this.currentModel = 'auto';
+    // this.switchModel(this.currentModel);
+    // this.modelSelect.value = this.currentModel;
   }
 
   bindEvents() {

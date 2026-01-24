@@ -194,20 +194,28 @@ class ModelManager {
       return this.models.get(this.currentMode);
     }
 
-    // 自动选择策略：基于延迟和成功率
-    const availableModels = Array.from(this.models.values())
-      .filter(m => m.stats.calls === 0 || m.stats.errors / m.stats.calls < 0.5);
-
-    if (availableModels.length === 0) {
-      return this.models.values().next().value;
+    // 自动选择策略：优先使用DeepSeek（对复杂Prompt支持更好）
+    const deepseek = this.models.get('deepseek');
+    const qwen = this.models.get('qwen');
+    
+    // 如果DeepSeek可用且成功率可接受，优先使用
+    if (deepseek && (deepseek.stats.calls === 0 || deepseek.stats.errors / deepseek.stats.calls < 0.3)) {
+      return deepseek;
     }
-
-    // 选择延迟最低的模型
-    return availableModels.reduce((best, current) => {
-      if (current.stats.avgLatency === 0) return current;
-      if (best.stats.avgLatency === 0) return best;
-      return current.stats.avgLatency < best.stats.avgLatency ? current : best;
-    });
+    
+    // 如果DeepSeek失败率高，使用千问作为备用
+    if (qwen && (qwen.stats.calls === 0 || qwen.stats.errors / qwen.stats.calls < 0.5)) {
+      return qwen;
+    }
+    
+    // 都不可用时，返回第一个可用模型
+    return this.models.values().next().value;
+    // // 选择延迟最低的模型
+    // return availableModels.reduce((best, current) => {
+    //   if (current.stats.avgLatency === 0) return current;
+    //   if (best.stats.avgLatency === 0) return best;
+    //   return current.stats.avgLatency < best.stats.avgLatency ? current : best;
+    // });
   }
 
   async chat(messages, options = {}) {

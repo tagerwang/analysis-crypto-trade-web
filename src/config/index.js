@@ -22,7 +22,7 @@ export default {
     },
     qwen: {
       apiKey: process.env.QWEN_API_KEY,
-      baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
       model: 'qwen-turbo'
     }
   },

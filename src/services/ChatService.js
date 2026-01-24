@@ -5,12 +5,14 @@ import StorageService from './StorageService.js';
 class ChatService {
   constructor() {
     this.sessions = new Map(); // sessionId -> messages[]
+    this.sessionMeta = new Map(); // sessionId -> { disclaimerShown: boolean }
   }
 
   async chat(sessionId, userMessage, options = {}) {
     // 获取或创建会话
     if (!this.sessions.has(sessionId)) {
       this.sessions.set(sessionId, []);
+      this.sessionMeta.set(sessionId, { disclaimerShown: false });
     }
     
     const messages = this.sessions.get(sessionId);
@@ -23,7 +25,7 @@ class ChatService {
     });
 
     // 构建系统提示词
-    const systemPrompt = this.buildSystemPrompt();
+    const systemPrompt = this.buildSystemPrompt(sessionId);
     
     // 准备AI消息
     const aiMessages = [
@@ -91,8 +93,10 @@ class ChatService {
       console.log('Tool results text:', toolResultsText);
 
       // 再次调用AI，让它基于工具结果生成最终回复
+      // 注意：followUp时不再显示免责声明，使用空的disclaimer
+      const followUpSystemPrompt = this.buildSystemPrompt(sessionId, true);
       const followUpMessages = [
-        { role: 'system', content: systemPrompt },
+        { role: 'system', content: followUpSystemPrompt },
         ...messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
         { role: 'assistant', content: result.content },
         { role: 'user', content: `工具执行结果：\n${toolResultsText}\n\n请基于以上数据，用简洁专业的方式回答用户的问题。不要再次调用工具。` }
@@ -136,6 +140,7 @@ class ChatService {
     // 获取或创建会话
     if (!this.sessions.has(sessionId)) {
       this.sessions.set(sessionId, []);
+      this.sessionMeta.set(sessionId, { disclaimerShown: false });
     }
     
     const messages = this.sessions.get(sessionId);
@@ -148,7 +153,7 @@ class ChatService {
     });
 
     // 构建系统提示词
-    const systemPrompt = this.buildSystemPrompt();
+    const systemPrompt = this.buildSystemPrompt(sessionId);
     
     // 准备AI消息
     const aiMessages = [
@@ -218,8 +223,10 @@ class ChatService {
       onChunk({ type: 'tool_done' });
 
       // 再次流式调用AI
+      // 注意：followUp时不再显示免责声明，使用空的disclaimer
+      const followUpSystemPrompt = this.buildSystemPrompt(sessionId, true);
       const followUpMessages = [
-        { role: 'system', content: systemPrompt },
+        { role: 'system', content: followUpSystemPrompt },
         ...messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
         { role: 'assistant', content: fullContent },
         { role: 'user', content: `工具执行结果：\n${toolResultsText}\n\n请基于以上数据，用简洁专业的方式回答用户的问题。不要再次调用工具。` }
@@ -260,16 +267,21 @@ class ChatService {
     };
   }
 
-  buildSystemPrompt() {
-    // 是否已经显示过免责声明（每个会话只显示一次）
-    this.disclaimerShown = this.disclaimerShown || false;
+  buildSystemPrompt(sessionId, skipDisclaimer = false) {
+    // 获取会话元数据
+    const meta = this.sessionMeta.get(sessionId) || { disclaimerShown: false };
     
-    const disclaimer = !this.disclaimerShown 
+    // 是否显示免责声明（每个会话只显示一次，且不在followUp时显示）、同时只给30%的几率显示
+    const shouldShowDisclaimer = !skipDisclaimer && !meta.disclaimerShown && Math.random() <= 0.3;
+    
+    const disclaimer = shouldShowDisclaimer
       ? '\n\n<first_message_disclaimer>\n⚠️ 提醒：加密货币高风险，建议仅供参考，请根据自身情况决策。\n（此提示仅显示一次）\n</first_message_disclaimer>\n' 
       : '';
     
-    if (!this.disclaimerShown) {
-      this.disclaimerShown = true;
+    // 标记已显示
+    if (shouldShowDisclaimer) {
+      meta.disclaimerShown = true;
+      this.sessionMeta.set(sessionId, meta);
     }
 
     return `<system>
@@ -679,12 +691,15 @@ ${disclaimer}
     const messages = await StorageService.loadChat(sessionId);
     if (messages) {
       this.sessions.set(sessionId, messages);
+      // 加载已有会话时，免责声明已经显示过了
+      this.sessionMeta.set(sessionId, { disclaimerShown: true });
     }
     return messages;
   }
 
   deleteSession(sessionId) {
     this.sessions.delete(sessionId);
+    this.sessionMeta.delete(sessionId);
     return StorageService.deleteChat(sessionId);
   }
 

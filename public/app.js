@@ -2,6 +2,8 @@ class CryptoAIApp {
   constructor() {
     this.currentSessionId = null;
     this.isLoading = false;
+    this.userScrolling = false; // 跟踪用户是否在手动滚动
+    this.scrollTimeout = null;
     
     this.initElements();
     this.bindEvents();
@@ -77,6 +79,36 @@ class CryptoAIApp {
           !this.menuToggle.contains(e.target)) {
         this.sidebar.classList.remove('open');
       }
+    });
+
+    // 检测用户滚动行为
+    let lastScrollTop = 0;
+    this.chatContainer.addEventListener('scroll', () => {
+      const currentScrollTop = this.chatContainer.scrollTop;
+      const scrollHeight = this.chatContainer.scrollHeight;
+      const clientHeight = this.chatContainer.clientHeight;
+      const distanceFromBottom = scrollHeight - currentScrollTop - clientHeight;
+      
+      // 如果用户向上滚动（查看历史内容），标记为用户滚动
+      if (currentScrollTop < lastScrollTop) {
+        this.userScrolling = true;
+        // 清除之前的定时器
+        if (this.scrollTimeout) {
+          clearTimeout(this.scrollTimeout);
+          this.scrollTimeout = null;
+        }
+      }
+      
+      // 如果用户滚动到底部附近（50px内），恢复自动滚动
+      if (distanceFromBottom < 50) {
+        this.userScrolling = false;
+        if (this.scrollTimeout) {
+          clearTimeout(this.scrollTimeout);
+          this.scrollTimeout = null;
+        }
+      }
+      
+      lastScrollTop = currentScrollTop;
     });
   }
 
@@ -348,7 +380,10 @@ class CryptoAIApp {
     } finally {
       this.isLoading = false;
       this.sendBtn.disabled = false;
-      this.messageInput.focus();
+      // 移动端不自动聚焦（避免弹出键盘）
+      if (window.innerWidth > 768) {
+        this.messageInput.focus();
+      }
     }
   }
 
@@ -384,7 +419,10 @@ class CryptoAIApp {
       modelSpan.textContent = this.getModelDisplayName(model);
     }
     
-    this.scrollToBottom();
+    // 只在用户没有手动滚动时自动滚动
+    if (!this.userScrolling) {
+      this.scrollToBottom();
+    }
   }
 
   showToolIndicator(messageDiv, text) {
@@ -401,6 +439,8 @@ class CryptoAIApp {
 
   finalizeStreamingMessage(messageDiv, model) {
     messageDiv.classList.remove('streaming');
+    // 输出完成后不自动聚焦输入框（避免弹出键盘）
+    // this.messageInput.focus(); // 移除自动聚焦
   }
 
   addMessage(role, content, model = null) {
@@ -537,9 +577,10 @@ class CryptoAIApp {
   }
 
   scrollToBottom() {
-    setTimeout(() => {
+    // 使用 requestAnimationFrame 优化滚动性能
+    requestAnimationFrame(() => {
       this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
-    }, 100);
+    });
   }
 
   showNotification(message) {

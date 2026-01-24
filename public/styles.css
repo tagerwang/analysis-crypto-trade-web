@@ -496,6 +496,29 @@ body {
 
   .chat-container {
     padding: 16px;
+    padding-bottom: 80px; /* 为固定输入框留出空间 */
+  }
+
+  /* 固定底部输入框 */
+  .input-container {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    padding: 12px 16px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border);
+    /* 添加安全区域支持 */
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+
+  .input-wrapper {
+    max-width: 100%;
+  }
+
+  #messageInput {
+    font-size: 16px; /* 防止 iOS 自动缩放 */
   }
 }
 

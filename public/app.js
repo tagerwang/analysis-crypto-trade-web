@@ -66,6 +66,12 @@ class CryptoAIApp {
     document.addEventListener('click', (e) => {
       if (e.target.classList.contains('quick-btn')) {
         const prompt = e.target.dataset.prompt;
+        
+        // 百度统计 - 追踪快捷按钮
+        if (window._hmt) {
+          _hmt.push(['_trackEvent', 'quick_button', 'click', prompt]);
+        }
+        
         this.messageInput.value = prompt;
         this.sendMessage();
       }
@@ -143,13 +149,18 @@ class CryptoAIApp {
       const response = await fetch('./api/model/switch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model })
+        body: JSON.stringify({ model, sessionId: this.currentSessionId })
       });
       
       const data = await response.json();
       if (data.success) {
         this.currentModel = model;
         this.showNotification(`已切换到${this.getModelDisplayName(model)}`);
+        
+        // 百度统计 - 追踪模型切换
+        if (window._hmt) {
+          _hmt.push(['_trackEvent', 'model', 'switch', model]);
+        }
       }
     } catch (error) {
       console.error('Failed to switch model:', error);
@@ -294,6 +305,11 @@ class CryptoAIApp {
     const message = this.messageInput.value.trim();
     if (!message || this.isLoading) return;
 
+    // 百度统计 - 追踪消息发送
+    if (window._hmt) {
+      _hmt.push(['_trackEvent', 'chat', 'send_message', this.currentModel, message.length]);
+    }
+
     // 隐藏欢迎消息
     this.welcomeMessage.style.display = 'none';
 
@@ -369,6 +385,11 @@ class CryptoAIApp {
       this.loadSessions(); // 刷新会话列表
     } catch (error) {
       console.error('Chat error:', error);
+      
+      // 百度统计 - 追踪错误
+      if (window._hmt) {
+        _hmt.push(['_trackEvent', 'error', 'chat_error', error.message]);
+      }
       
       let errorMessage = error.message;
       if (error.message.includes('Failed to fetch')) {

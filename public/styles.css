@@ -239,10 +239,15 @@ body {
   color: white;
   margin-left: 40px;
 }
-
+.message.assistant{
+  display: flex;
+  flex-direction: column;
+}
 .message.assistant .message-content {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
+  flex: 1;
+  overflow: auto;
 }
 
 .message-content pre {

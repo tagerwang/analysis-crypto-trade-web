@@ -25,8 +25,11 @@ class ChatService {
       timestamp: new Date().toISOString()
     });
 
+    // 检测是否需要强制调用MCP（单个币种查询）
+    const forcedMCPCall = this.detectForcedMCPCall(userMessage);
+    
     // 构建系统提示词
-    const systemPrompt = this.buildSystemPrompt(sessionId);
+    const systemPrompt = this.buildSystemPrompt(sessionId, false, forcedMCPCall);
     
     // 准备AI消息
     const aiMessages = [
@@ -91,11 +94,14 @@ class ChatService {
         }
       }).join('\n\n');
 
+      // 在原始回复中的 TOOL_CALL 后添加换行符，避免价格信息紧贴
+      result.content = result.content.replace(/(\[TOOL_CALL:[^\]]+\])/g, '$1\n');
+
       console.log('Tool results text:', toolResultsText);
 
       // 再次调用AI，让它基于工具结果生成最终回复
       // 注意：followUp时不再显示免责声明，使用空的disclaimer
-      const followUpSystemPrompt = this.buildSystemPrompt(sessionId, true);
+      const followUpSystemPrompt = this.buildSystemPrompt(sessionId, true, null);
       const followUpMessages = [
         { role: 'system', content: followUpSystemPrompt },
         ...messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
@@ -177,8 +183,11 @@ class ChatService {
       timestamp: new Date().toISOString()
     });
 
+    // 检测是否需要强制调用MCP（单个币种查询）
+    const forcedMCPCall = this.detectForcedMCPCall(userMessage);
+    
     // 构建系统提示词
-    const systemPrompt = this.buildSystemPrompt(sessionId);
+    const systemPrompt = this.buildSystemPrompt(sessionId, false, forcedMCPCall);
     
     // 准备AI消息
     const aiMessages = [
@@ -245,11 +254,14 @@ class ChatService {
         }
       }).join('\n\n');
 
+      // 在原始回复中的 TOOL_CALL 后添加换行符，避免价格信息紧贴
+      fullContent = fullContent.replace(/(\[TOOL_CALL:[^\]]+\])/g, '$1\n');
+
       onChunk({ type: 'tool_done' });
 
       // 再次流式调用AI
       // 注意：followUp时不再显示免责声明，使用空的disclaimer
-      const followUpSystemPrompt = this.buildSystemPrompt(sessionId, true);
+      const followUpSystemPrompt = this.buildSystemPrompt(sessionId, true, null);
       const followUpMessages = [
         { role: 'system', content: followUpSystemPrompt },
         ...messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
@@ -324,7 +336,202 @@ class ChatService {
     };
   }
 
-  buildSystemPrompt(sessionId, skipDisclaimer = false) {
+  /**
+   * 缓存币安交易对列表
+   */
+  static binanceSymbolsCache = null;
+  static binanceSymbolsCacheTime = 0;
+  static CACHE_DURATION = 3600000 * 24; // 24小时缓存
+
+  /**
+   * 常见币种中英文映射（用于匹配中文名称）
+   */
+  static cryptoPatterns = [
+    // 主流币
+    { pattern: /\b(btc|bitcoin|大饼)\b|比特币/i, symbol: 'BTC' },
+    { pattern: /\b(eth|ethereum|姨太)\b|以太坊|以太/i, symbol: 'ETH' },
+    { pattern: /\b(bnb|binance coin)\b|币安币|币安/i, symbol: 'BNB' },
+    { pattern: /\b(xrp|ripple)\b|瑞波币|瑞波/i, symbol: 'XRP' },
+    { pattern: /\b(sol|solana)\b|索拉纳/i, symbol: 'SOL' },
+    { pattern: /\b(ada|cardano)\b|艾达币|卡尔达诺/i, symbol: 'ADA' },
+    // 热门山寨币
+    { pattern: /\b(doge|dogecoin|狗子)\b|狗狗币|狗币/i, symbol: 'DOGE' },
+    { pattern: /\b(shib|shiba)\b|柴犬币|柴犬/i, symbol: 'SHIB' },
+    { pattern: /\b(pepe)\b|佩佩|青蛙币/i, symbol: 'PEPE' },
+    { pattern: /\b(matic|polygon)\b|马蹄币|马蹄/i, symbol: 'MATIC' },
+    { pattern: /\b(avax|avalanche)\b|雪崩/i, symbol: 'AVAX' },
+    { pattern: /\b(dot|polkadot)\b|波卡/i, symbol: 'DOT' },
+    { pattern: /\b(link|chainlink)\b|链克/i, symbol: 'LINK' },
+    { pattern: /\b(uni|uniswap)\b|优你/i, symbol: 'UNI' },
+    { pattern: /\b(arb|arbitrum)\b|阿比/i, symbol: 'ARB' },
+    { pattern: /\b(op|optimism)\b/i, symbol: 'OP' }
+  ];
+
+  /**
+   * 从币安API获取所有交易对
+   */
+  async fetchBinanceSymbols() {
+    try {
+      // 检查缓存
+      const now = Date.now();
+      if (ChatService.binanceSymbolsCache && (now - ChatService.binanceSymbolsCacheTime) < ChatService.CACHE_DURATION) {
+        console.log('✅ 使用缓存的币安交易对列表');
+        return ChatService.binanceSymbolsCache;
+      }
+
+      console.log('🔄 从币安API获取交易对列表...');
+      
+      // 使用动态import来支持Node.js环境
+      const https = await import('https');
+      
+      return new Promise((resolve) => {
+        const options = {
+          hostname: 'api.binance.com',
+          path: '/api/v3/exchangeInfo',
+          method: 'GET',
+          timeout: 5000, // 5秒超时
+          headers: {
+            'User-Agent': 'Mozilla/5.0'
+          }
+        };
+
+        const req = https.default.request(options, (res) => {
+          let data = '';
+
+          res.on('data', (chunk) => {
+            data += chunk;
+          });
+
+          res.on('end', () => {
+            try {
+              if (res.statusCode !== 200) {
+                console.error(`❌ 币安API返回错误状态码: ${res.statusCode}`);
+                resolve(null);
+                return;
+              }
+
+              const json = JSON.parse(data);
+              
+              // 提取所有USDT交易对的base币种
+              const symbols = json.symbols
+                .filter(s => s.quoteAsset === 'USDT' && s.status === 'TRADING')
+                .map(s => s.baseAsset);
+
+              console.log(`✅ 成功获取${symbols.length}个币安交易对`);
+              
+              // 更新缓存
+              ChatService.binanceSymbolsCache = symbols;
+              ChatService.binanceSymbolsCacheTime = now;
+              
+              resolve(symbols);
+            } catch (parseError) {
+              console.error('❌ 解析币安API响应失败:', parseError.message);
+              resolve(null);
+            }
+          });
+        });
+
+        req.on('error', (error) => {
+          console.error('❌ 币安API请求失败:', error.message);
+          resolve(null);
+        });
+
+        req.on('timeout', () => {
+          console.error('❌ 币安API请求超时');
+          req.destroy();
+          resolve(null);
+        });
+
+        req.end();
+      });
+    } catch (error) {
+      console.error('❌ 获取币安交易对异常:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * 检测是否需要强制调用MCP（币种价格查询）
+   * @param {string} userMessage - 用户消息
+   * @returns {Object|null} { symbols, reason } 或 null
+   */
+  async detectForcedMCPCall(userMessage) {
+    // 尝试从币安API获取完整列表
+    const binanceSymbols = await this.fetchBinanceSymbols();
+    
+    if (binanceSymbols) {
+      // 使用币安API数据
+      console.log(`✅ 使用币安API数据检测币种（共${binanceSymbols.length}个）`);
+      
+      // 先用硬编码的pattern匹配中文名称
+      const matchedSymbols = new Set(); // 使用Set避免重复计数
+
+      for (const { pattern, symbol } of ChatService.cryptoPatterns) {
+        if (pattern.test(userMessage)) {
+          matchedSymbols.add(symbol);
+        }
+      }
+
+      // 如果没有匹配到中文名称，尝试匹配币安的symbol
+      if (matchedSymbols.size === 0) {
+        for (const symbol of binanceSymbols) {
+          // 匹配完整的symbol（如BTC、ETH）
+          const symbolPattern = new RegExp(`\\b${symbol}\\b`, 'i');
+          if (symbolPattern.test(userMessage)) {
+            matchedSymbols.add(symbol);
+          }
+        }
+      }
+
+      // 只要检测到币种（1个或多个）就检查是否需要调用MCP
+      if (matchedSymbols.size > 0) {
+        // 检测是否是价格/交易相关的问题
+        const priceKeywords = /价格|多少钱|多少|现价|当前价|行情|走势|分析|怎么样|如何|能涨|能跌|会涨|会跌|开多|开空|做多|做空|买入|卖出|上车|下车|建议|推荐/i;
+        
+        if (priceKeywords.test(userMessage)) {
+          const symbolsArray = Array.from(matchedSymbols);
+          console.log(`🎯 检测到币种查询：${symbolsArray.join(', ')}（共${symbolsArray.length}个），强制调用MCP（币安API）`);
+          return {
+            symbols: symbolsArray,
+            reason: `${symbolsArray.length}个币种价格/交易查询`
+          };
+        }
+      }
+
+      return null;
+    }
+
+    // 币安API失败，使用硬编码的备选方案
+    console.log('⚠️ 币安API不可用，使用硬编码的币种列表（备选方案）');
+    
+    // 检测是否提到币种
+    const matchedSymbols = new Set();
+
+    for (const { pattern, symbol } of ChatService.cryptoPatterns) {
+      if (pattern.test(userMessage)) {
+        matchedSymbols.add(symbol);
+      }
+    }
+
+    // 只要检测到币种（1个或多个）就检查是否需要调用MCP
+    if (matchedSymbols.size > 0) {
+      // 检测是否是价格/交易相关的问题
+      const priceKeywords = /价格|多少钱|多少|现价|当前价|行情|走势|分析|怎么样|如何|能涨|能跌|会涨|会跌|开多|开空|做多|做空|买入|卖出|上车|下车|建议|推荐/i;
+      
+      if (priceKeywords.test(userMessage)) {
+        const symbolsArray = Array.from(matchedSymbols);
+        console.log(`🎯 检测到币种查询：${symbolsArray.join(', ')}（共${symbolsArray.length}个），强制调用MCP（硬编码备选）`);
+        return {
+          symbols: symbolsArray,
+          reason: `${symbolsArray.length}个币种价格/交易查询`
+        };
+      }
+    }
+
+    return null;
+  }
+
+  buildSystemPrompt(sessionId, skipDisclaimer = false, forcedMCPCall = null) {
     // 获取会话元数据
     const meta = this.sessionMeta.get(sessionId) || { disclaimerShown: false };
     
@@ -340,6 +547,27 @@ class ChatService {
       meta.disclaimerShown = true;
       this.sessionMeta.set(sessionId, meta);
     }
+
+    // 如果检测到强制MCP调用，添加特殊指令
+    const forcedMCPInstruction = (forcedMCPCall && forcedMCPCall.symbols && forcedMCPCall.symbols.length > 0)
+      ? `\n\n<forced_mcp_call>
+⚠️ 强制要求：用户询问了${forcedMCPCall.symbols.join('、')}的${forcedMCPCall.reason}
+你必须立即调用MCP工具获取实时数据，不要使用任何记忆中的价格！
+
+必须调用：
+${forcedMCPCall.symbols.map(symbol => `- [TOOL_CALL:binance:comprehensive_analysis:{"symbol":"${symbol}"}]`).join('\n')}
+
+禁止：
+- 不要使用任何记忆中的价格数据
+- 不要猜测价格
+- 不要说"根据最新数据"然后给出错误价格
+- 必须等待工具返回实际数据后再回答
+
+注意：
+- 大盘分析不是必须的，专注于用户询问的币种即可
+- 只在必要时才分析大盘走势
+</forced_mcp_call>\n`
+      : '';
 
     return `<system>
 你是专业的加密货币交易助手，为交易者提供实时分析和明确建议。
@@ -357,7 +585,7 @@ class ChatService {
 4. 用数字说话，避免"可能"、"也许"等模糊词
 5. 直接给建议，不过度寒暄（禁止"您好"、"很高兴为您服务"）
 6. **准确识别中文币种名称**，无需引号即可识别（如：币安人生、币安币、狗狗币、柴犬币）
-7. **分析大盘走势占比**，判断市场整体做多还是做空
+7. **大盘走势是重要参考**，但不是每次都必须分析，只在必要时才提及
 8. **明确标注技术指标的时间周期**（如：15分钟金叉、小时金叉、日线死叉）
 </critical_rules>
 
@@ -394,18 +622,23 @@ class ChatService {
 <trading_analysis_rules>
 当用户询问交易建议时（开多/开空、做多/做空、买入/卖出），你必须：
 
-1. **先分析大盘走势**：调用 get_top_gainers_losers 判断市场整体方向
-2. **优先使用币安数据**：先调用 binance 工具获取实时数据
-3. 给出明确的方向建议，不要含糊其辞
-4. 用概率量化你的判断（如：看多概率65%）
-5. 简要说明2-3个关键依据
-6. **标注技术指标的时间周期**（如：15分钟RSI、小时RSI、日线金叉）
-7. 标注风险等级（低/中/高）
+1. **优先使用币安数据**：先调用 binance 工具获取实时数据
+2. 给出明确的方向建议，不要含糊其辞
+3. 用概率量化你的判断（如：看多概率65%）
+4. 简要说明2-3个关键依据
+5. **标注技术指标的时间周期**（如：15分钟RSI、小时RSI、日线金叉）
+6. 标注风险等级（低/中/高）
 
-回答格式示例：
-"【大盘】涨多跌少，65%币种上涨，做多环境
+**关于大盘分析：**
+- 大盘走势是重要参考，但不是每次都必须提及
+- 只在以下情况才分析大盘：
+  1. 用户明确询问大盘/市场整体情况
+  2. 个股走势与大盘明显背离时（需要解释原因）
+  3. 做出重要交易决策时（如重仓建议）
+- 其他情况下，专注于个股分析即可
 
-BTC当前$67,234
+回答格式示例（常规情况，无需大盘）：
+"BTC当前$67,234
 建议：开多，看涨概率70%
 依据：
 - 日线金叉，趋势向上
@@ -413,6 +646,13 @@ BTC当前$67,234
 - 15分钟成交量放大，突破有效
 
 风险：中等。建议仓位控制在30%以内，止损设在$65,500"
+
+回答格式示例（需要大盘参考时）：
+"【大盘】涨多跌少，65%币种上涨，做多环境
+
+BTC当前$67,234，跟随大盘上涨
+建议：开多，看涨概率70%
+..."
 
 **数据来源标注规则：**
 - 币安数据（默认）：不需要标注
@@ -496,27 +736,26 @@ BTC当前$67,234
 <analysis_framework>
 分析交易机会的标准流程：
 
-1. **大盘走势占比分析（必须优先）**
-   - 调用 get_top_gainers_losers 查看涨跌幅排行
-   - 统计涨跌币种数量和幅度
-   - 判断市场整体情绪：
-     - 涨多跌少(>60%上涨) → 做多为主
-     - 跌多涨少(>60%下跌) → 做空为主
-     - 涨跌均衡 → 震荡行情，谨慎操作
-   - **大盘走势决定操作方向**，逆势操作风险极高
+1. **价格位置**：距离关键支撑/阻力多远？
 
-2. **价格位置**：距离关键支撑/阻力多远？
+2. **趋势判断**：短期/中期趋势方向？
 
-3. **趋势判断**：短期/中期趋势方向？
+3. **量价关系**：成交量是否配合？
 
-4. **量价关系**：成交量是否配合？
-
-5. **技术指标（必须标注时间周期）**：
+4. **技术指标（必须标注时间周期）**：
    - RSI：标注"15分钟RSI"、"小时RSI"或"日线RSI"
    - MACD：标注"15分钟金叉"、"小时金叉"或"日线死叉"
    - 成交量：标注"15分钟放量"、"小时放量"或"日线缩量"
 
-6. **风险收益比**：潜在盈亏比至少1:2
+5. **风险收益比**：潜在盈亏比至少1:2
+
+6. **大盘走势参考（选择性使用）**：
+   - 只在必要时才调用 get_top_gainers_losers 分析大盘
+   - 必要情况包括：
+     * 用户明确询问大盘/市场整体
+     * 个股走势与预期不符，需要大盘验证
+     * 做出重仓建议时（>30%仓位）
+   - 大多数情况下，专注个股分析即可
 
 给出建议时必须覆盖：
 - **市值和流动性分析**（必须！）
@@ -567,12 +806,12 @@ BTC当前$67,234
 
 **推荐策略：**
 当用户询问"推荐"、"适合"、"机会"等词时：
-1. 先调用 get_top_gainers_losers 查看涨跌幅排行
-2. 再调用 get_trending 查看热门币种
-3. **必须分析市值和流动性**，过滤掉流动性差的币种
-4. 从中筛选2-3个有潜力的币种
-5. 分别调用 comprehensive_analysis 进行详细分析
-6. 给出多样化的推荐（不要只推BTC/ETH）
+1. 调用 get_trending 查看热门币种
+2. **必须分析市值和流动性**，过滤掉流动性差的币种
+3. 从中筛选2-3个有潜力的币种
+4. 分别调用 comprehensive_analysis 进行详细分析
+5. 给出多样化的推荐（不要只推BTC/ETH）
+6. 可选：如果需要了解整体市场环境，调用 get_top_gainers_losers
 
 **币种多样化原则：**
 - 主流币（BTC/ETH）：大市值，稳健型，适合大仓位
@@ -720,10 +959,8 @@ BTC当前$67,234
 </mcp_tools>
 
 <response_style>
-好的示例1（常规大盘币，含大盘分析和时间周期）：
-"【大盘】涨多跌少，65%币种上涨，做多环境
-
-BTC现在$67,234
+好的示例1（常规分析，无需大盘）：
+"BTC现在$67,234
 市值$1.3T，流动性优秀
 
 技术面：
@@ -738,24 +975,22 @@ BTC现在$67,234
 仓位：30-40%
 风险：中等"
 
-好的示例2（大盘看跌环境）：
+好的示例2（需要大盘参考时）：
 "【大盘】跌多涨少，70%币种下跌，做空环境
 
 ETH现在$3,200
+逆势抗跌，相对强势
 
 技术面：
-- 日线死叉，趋势向下
-- 小时RSI 35，超卖但未反弹
-- 小时成交量萎缩
+- 日线死叉，但跌幅小于大盘
+- 小时RSI 45，中性区域
+- 资金流入明显
 
-别追了，风险收益比不划算
-等反弹到$3,300再考虑做空
-或等企稳$3,100再做多"
+别追空，等反弹到$3,300再考虑
+或等企稳$3,100可以轻仓做多"
 
 好的示例3（震荡行情）：
-"【大盘】涨跌均衡，震荡行情
-
-BTC现在$67k
+"BTC现在$67k
 技术面不明朗，成交量萎缩
 
 这个位置不建议动，观望为主
@@ -772,14 +1007,14 @@ BTC现在$67k
 "您好，很高兴为您服务。根据市场情况，BTC可能会有上涨的趋势，但也存在回调风险，建议您谨慎操作，做好风险控制。本建议不构成投资建议，请您自行判断，仅供参考。"
 
 **必须包含的要素：**
-1. **大盘走势分析**（涨多跌少/跌多涨少/震荡）
-2. 当前价格（用简洁的表达，如$67k而非$67,000）
-3. **数据来源标注**（仅非币安数据需要标注，如"CoinGecko数据"）
-4. **技术指标的时间周期**（如：15分钟RSI、小时RSI、日线金叉）
-5. 明确建议（"可以搏"、"别追"、"观望"）
-6. 具体点位（进场/止损/目标）
-7. 仓位建议
-8. 风险等级
+1. 当前价格（用简洁的表达，如$67k而非$67,000）
+2. **数据来源标注**（仅非币安数据需要标注，如"CoinGecko数据"）
+3. **技术指标的时间周期**（如：15分钟RSI、小时RSI、日线金叉）
+4. 明确建议（"可以搏"、"别追"、"观望"）
+5. 具体点位（进场/止损/目标）
+6. 仓位建议
+7. 风险等级
+8. **大盘分析**（仅在必要时添加，不是每次都要）
 
 **语言风格要求：**
 - 像朋友聊天，不像客服
@@ -789,7 +1024,7 @@ BTC现在$67k
 - 不过度客套和免责
 </response_style>
 
-${disclaimer}
+${disclaimer}${forcedMCPInstruction}
 
 当前时间：${new Date().toISOString()}
 </system>`;

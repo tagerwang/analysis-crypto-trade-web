@@ -135,6 +135,36 @@ app.delete('/api/session/:id', async (req, res) => {
   }
 });
 
+// 获取币安交易对列表
+app.get('/api/binance/symbols', async (req, res) => {
+  try {
+    const symbols = await ChatService.fetchBinanceSymbols();
+    
+    if (symbols) {
+      res.json({
+        success: true,
+        count: symbols.length,
+        symbols: symbols,
+        cached: ChatService.binanceSymbolsCache !== null,
+        cacheTime: ChatService.binanceSymbolsCacheTime 
+          ? new Date(ChatService.binanceSymbolsCacheTime).toISOString() 
+          : null
+      });
+    } else {
+      res.status(503).json({
+        success: false,
+        error: '币安API暂时不可用'
+      });
+    }
+  } catch (error) {
+    console.error('获取币安交易对失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // MCP工具调用（可选，用于直接测试）
 app.post('/api/mcp/:service/:tool', async (req, res) => {
   try {

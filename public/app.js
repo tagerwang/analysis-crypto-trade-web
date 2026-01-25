@@ -494,6 +494,9 @@ class CryptoAIApp {
   }
 
   formatContent(content) {
+    // 在 TOOL_CALL 后强制添加换行符（如果后面不是换行符的话）
+    content = content.replace(/(\[TOOL_CALL:[^\]]+\])(?!\n)/g, '$1\n');
+    
     // 使用 marked.js 渲染 Markdown
     if (typeof marked !== 'undefined' && marked.parse) {
       try {

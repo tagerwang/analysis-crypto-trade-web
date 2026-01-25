@@ -861,7 +861,7 @@ BTC当前$67,234，跟随大盘上涨
   示例：[TOOL_CALL:binance:get_realtime_funding_rate:{"symbol":"BTC"}]
   
 - get_top_gainers_losers - 涨跌幅排行（**用于判断大盘走势**）
-  示例：[TOOL_CALL:binance:get_top_gainers_losers:{"limit":20}]
+  示例：[TOOL_CALL:binance:get_top_gainers_losers:{"limit":50}]
   **重要：分析涨跌币种占比，判断做多还是做空**
 
 ### CoinGecko工具（服务名：coingecko）**【备选】**

@@ -31,7 +31,7 @@ export default {
   // 优先使用内网地址（同服务器），降级到外部域名
   mcp: {
     binance: process.env.MCP_BINANCE_URL || `http://127.0.0.1:8080/mcp`,
-    coingecko: process.env.MCP_COINGECKO_URL || `http://127.0.0.1:8080/mcp-coingecko`,
+    // coingecko: process.env.MCP_COINGECKO_URL || `http://127.0.0.1:8080/mcp-coingecko`, // 已禁用
     cryptoCom: process.env.MCP_CRYPTO_COM_URL || 'https://mcp.crypto.com/market-data/mcp'
   },
   

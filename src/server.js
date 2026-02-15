@@ -21,7 +21,7 @@ function generateSessionId() {
 }
 
 // API路由 - 流式输出
-app.post('/api/chat', async (req, res) => {
+app.post('/crypto-ai-api/chat', async (req, res) => {
   try {
     const { sessionId, message, model, stream = true } = req.body;
     
@@ -78,7 +78,7 @@ app.post('/api/chat', async (req, res) => {
 });
 
 // 切换模型
-app.post('/api/model/switch', (req, res) => {
+app.post('/crypto-ai-api/model/switch', (req, res) => {
   try {
     const { model } = req.body;
     const success = ModelManager.setMode(model);
@@ -94,7 +94,7 @@ app.post('/api/model/switch', (req, res) => {
 });
 
 // 获取可用模型
-app.get('/api/models', (req, res) => {
+app.get('/crypto-ai-api/models', (req, res) => {
   res.json({
     available: ['auto', ...ModelManager.getAvailableModels()],
     stats: ModelManager.getStats()
@@ -102,7 +102,7 @@ app.get('/api/models', (req, res) => {
 });
 
 // 获取会话历史
-app.get('/api/sessions', async (req, res) => {
+app.get('/crypto-ai-api/sessions', async (req, res) => {
   try {
     const sessions = await ChatService.listSessions();
     res.json({ success: true, sessions });
@@ -112,7 +112,7 @@ app.get('/api/sessions', async (req, res) => {
 });
 
 // 加载会话
-app.get('/api/session/:id', async (req, res) => {
+app.get('/crypto-ai-api/session/:id', async (req, res) => {
   try {
     const messages = await ChatService.loadSession(req.params.id);
     if (messages) {
@@ -126,7 +126,7 @@ app.get('/api/session/:id', async (req, res) => {
 });
 
 // 删除会话
-app.delete('/api/session/:id', async (req, res) => {
+app.delete('/crypto-ai-api/session/:id', async (req, res) => {
   try {
     const success = await ChatService.deleteSession(req.params.id);
     res.json({ success });
@@ -136,7 +136,7 @@ app.delete('/api/session/:id', async (req, res) => {
 });
 
 // 获取币安交易对列表
-app.get('/api/binance/symbols', async (req, res) => {
+app.get('/crypto-ai-api/binance/symbols', async (req, res) => {
   try {
     const symbols = await ChatService.fetchBinanceSymbols();
     
@@ -165,8 +165,22 @@ app.get('/api/binance/symbols', async (req, res) => {
   }
 });
 
+// 获取可用的 MCP 工具列表（OpenAI 格式）
+app.get('/crypto-ai-api/mcp/tools', async (req, res) => {
+  try {
+    const tools = await MCPService.getAllToolsOpenAIFormat();
+    res.json({ 
+      success: true, 
+      count: tools.length, 
+      tools 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // MCP工具调用（可选，用于直接测试）
-app.post('/api/mcp/:service/:tool', async (req, res) => {
+app.post('/crypto-ai-api/mcp/:service/:tool', async (req, res) => {
   try {
     const { service, tool } = req.params;
     const args = req.body;
@@ -192,4 +206,6 @@ app.listen(config.port, () => {
   console.log(`🚀 Crypto AI Analyzer running on port ${config.port}`);
   console.log(`📊 Available models: ${ModelManager.getAvailableModels().join(', ')}`);
   console.log(`🔗 Open http://localhost:${config.port}`);
+  const mcpUrls = config.mcp && typeof config.mcp === 'object' ? Object.entries(config.mcp).map(([k, v]) => `${k}=${v}`).join(', ') : 'none';
+  console.log(`🔌 MCP: ${mcpUrls}`);
 });

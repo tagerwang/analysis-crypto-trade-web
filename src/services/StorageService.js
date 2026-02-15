@@ -126,7 +126,7 @@ class StorageService {
               sessionId: data.sessionId,
               date,
               messageCount: data.messages.length,
-              lastMessage: data.messages[data.messages.length - 1]?.content?.substring(0, 50) || '',
+              lastMessage: data.messages.find(msg => msg.role === 'user')?.content?.substring(0, 50) || '新对话',
               updatedAt: data.updatedAt
             });
           }

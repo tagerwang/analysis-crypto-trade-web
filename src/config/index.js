@@ -32,7 +32,7 @@ export default {
   mcp: {
     binance: process.env.MCP_BINANCE_URL || `http://127.0.0.1:8080/mcp`,
     // coingecko: process.env.MCP_COINGECKO_URL || `http://127.0.0.1:8080/mcp-coingecko`, // 已禁用
-    cryptoCom: process.env.MCP_CRYPTO_COM_URL || 'https://mcp.crypto.com/market-data/mcp'
+    // cryptoCom: process.env.MCP_CRYPTO_COM_URL || 'https://mcp.crypto.com/market-data/mcp'
   },
   
   // 存储配置

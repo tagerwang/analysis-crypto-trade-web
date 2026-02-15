@@ -120,7 +120,7 @@ class CryptoAIApp {
 
   async loadModels() {
     try {
-      const response = await fetch('./api/models');
+      const response = await fetch('./crypto-ai-api/models');
       const data = await response.json();
       
       this.modelSelect.innerHTML = '';
@@ -146,7 +146,7 @@ class CryptoAIApp {
 
   async switchModel(model) {
     try {
-      const response = await fetch('./api/model/switch', {
+      const response = await fetch('./crypto-ai-api/model/switch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, sessionId: this.currentSessionId })
@@ -169,7 +169,7 @@ class CryptoAIApp {
 
   async loadSessions() {
     try {
-      const response = await fetch('./api/sessions');
+      const response = await fetch('./crypto-ai-api/sessions');
       const data = await response.json();
       
       if (data.success) {
@@ -257,7 +257,7 @@ class CryptoAIApp {
 
   async loadSession(sessionId) {
     try {
-      const response = await fetch(`./api/session/${sessionId}`);
+      const response = await fetch(`./crypto-ai-api/session/${sessionId}`);
       const data = await response.json();
       
       if (data.success) {
@@ -326,7 +326,7 @@ class CryptoAIApp {
     const aiMessageDiv = this.createStreamingMessage();
 
     try {
-      const response = await fetch('./api/chat', {
+      const response = await fetch('./crypto-ai-api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -368,7 +368,7 @@ class CryptoAIApp {
               currentModel = data.model;
               this.updateStreamingMessage(aiMessageDiv, fullContent, currentModel);
             } else if (data.type === 'tool_start') {
-              this.showToolIndicator(aiMessageDiv, '正在调用工具...');
+              this.showToolIndicator(aiMessageDiv, '正在分析数据...');
             } else if (data.type === 'tool_done') {
               this.hideToolIndicator(aiMessageDiv);
             } else if (data.type === 'done') {
@@ -392,12 +392,19 @@ class CryptoAIApp {
       }
       
       let errorMessage = error.message;
+      let errorType = 'error';
+      
+      // 友好的错误提示
       if (error.message.includes('Failed to fetch')) {
         errorMessage = '网络连接失败，请检查网络';
+      } else if (error.message.includes('余额不足') || error.message.includes('账户欠费')) {
+        // API 余额相关错误，使用警告样式
+        errorType = 'warning';
+        errorMessage = error.message + '\n\n💡 建议：\n• 访问 API 控制台充值\n• 或切换到其他模型继续使用';
       }
       
       aiMessageDiv.remove();
-      this.addMessage('assistant', `❌ 错误：${errorMessage}`, 'error');
+      this.addMessage('assistant', `❌ ${errorMessage}`, errorType);
     } finally {
       this.isLoading = false;
       this.sendBtn.disabled = false;
@@ -496,7 +503,9 @@ class CryptoAIApp {
   formatContent(content) {
     // 在 TOOL_CALL 后强制添加换行符（如果后面不是换行符的话）
     content = content.replace(/(\[TOOL_CALL:[^\]]+\])(?!\n)/g, '$1\n');
-    
+    // 🔒 客户端脱敏：移除所有工具调用信息，不向用户展示
+    // content = content.replace(/\[TOOL_CALL:[^\]]+\]\n?/g, '');
+
     // 使用 marked.js 渲染 Markdown
     if (typeof marked !== 'undefined' && marked.parse) {
       try {

@@ -17,33 +17,66 @@ class AIProvider {
     const startTime = Date.now();
     
     try {
+      const body = {
+        model: this.apiConfig.model,
+        messages,
+        temperature: options.temperature || 0.7,
+        max_tokens: options.maxTokens || 2000,
+        stream: false
+      };
+
+      // 支持 tools 参数
+      if (options.tools && options.tools.length > 0) {
+        body.tools = options.tools;
+        if (options.tool_choice !== undefined) {
+          body.tool_choice = options.tool_choice;
+        }
+      }
+
       const response = await fetch(`${this.apiConfig.baseURL}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiConfig.apiKey}`
         },
-        body: JSON.stringify({
-          model: this.apiConfig.model,
-          messages,
-          temperature: options.temperature || 0.7,
-          max_tokens: options.maxTokens || 2000,
-          stream: false
-        })
+        body: JSON.stringify(body)
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        // 解析错误详情
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        
+        try {
+          const errorData = await response.json();
+          if (errorData.error) {
+            const errMsg = errorData.error.message || errorData.error;
+            
+            // 🔧 友好的错误提示
+            if (response.status === 402 || errMsg.includes('Insufficient Balance')) {
+              errorMessage = `💰 ${this.name.toUpperCase()} API 余额不足，请充值后继续使用`;
+            } else if (response.status === 400 && (errMsg.includes('Arrearage') || errMsg.includes('Access denied'))) {
+              errorMessage = `💰 ${this.name.toUpperCase()} API 账户欠费，请充值后继续使用`;
+            } else if (errMsg) {
+              errorMessage = `${this.name.toUpperCase()} API 错误: ${errMsg}`;
+            }
+          }
+        } catch (e) {
+          // 无法解析错误信息，使用默认消息
+        }
+        
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
+      const message = data.choices[0].message;
       const latency = Date.now() - startTime;
       
       this.updateStats(latency, true);
       
       return {
         success: true,
-        content: data.choices[0].message.content,
+        content: message.content || '',
+        tool_calls: message.tool_calls || [],
         model: this.name,
         latency
       };
@@ -64,26 +97,58 @@ class AIProvider {
     const startTime = Date.now();
     
     try {
+      const body = {
+        model: this.apiConfig.model,
+        messages,
+        temperature: options.temperature || 0.7,
+        max_tokens: options.maxTokens || 2000,
+        stream: true
+      };
+
+      // 支持 tools 参数
+      if (options.tools && options.tools.length > 0) {
+        body.tools = options.tools;
+        if (options.tool_choice !== undefined) {
+          body.tool_choice = options.tool_choice;
+        }
+      }
+
       const response = await fetch(`${this.apiConfig.baseURL}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiConfig.apiKey}`
         },
-        body: JSON.stringify({
-          model: this.apiConfig.model,
-          messages,
-          temperature: options.temperature || 0.7,
-          max_tokens: options.maxTokens || 2000,
-          stream: true
-        })
+        body: JSON.stringify(body)
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        // 解析错误详情
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        
+        try {
+          const errorData = await response.json();
+          if (errorData.error) {
+            const errMsg = errorData.error.message || errorData.error;
+            
+            // 🔧 友好的错误提示
+            if (response.status === 402 || errMsg.includes('Insufficient Balance')) {
+              errorMessage = `💰 ${this.name.toUpperCase()} API 余额不足，请充值后继续使用`;
+            } else if (response.status === 400 && (errMsg.includes('Arrearage') || errMsg.includes('Access denied'))) {
+              errorMessage = `💰 ${this.name.toUpperCase()} API 账户欠费，请充值后继续使用`;
+            } else if (errMsg) {
+              errorMessage = `${this.name.toUpperCase()} API 错误: ${errMsg}`;
+            }
+          }
+        } catch (e) {
+          // 无法解析错误信息，使用默认消息
+        }
+        
+        throw new Error(errorMessage);
       }
 
       let fullContent = '';
+      const toolCallsAccum = []; // 按 index 积累 tool_calls
       const reader = response.body;
       let buffer = '';
 
@@ -99,15 +164,35 @@ class AIProvider {
           if (trimmed.startsWith('data: ')) {
             try {
               const json = JSON.parse(trimmed.slice(6));
-              const content = json.choices?.[0]?.delta?.content;
+              const delta = json.choices?.[0]?.delta;
               
-              if (content) {
-                fullContent += content;
+              if (!delta) continue;
+
+              // 处理 content
+              if (delta.content) {
+                fullContent += delta.content;
                 onChunk({
                   type: 'content',
-                  content,
+                  content: delta.content,
                   model: this.name
                 });
+              }
+
+              // 处理 tool_calls（按 index 积累）
+              if (delta.tool_calls) {
+                for (const tc of delta.tool_calls) {
+                  const i = tc.index;
+                  if (!toolCallsAccum[i]) {
+                    toolCallsAccum[i] = {
+                      id: tc.id || `call_${i}_${Date.now()}`,
+                      type: 'function',
+                      function: { name: '', arguments: '' }
+                    };
+                  }
+                  if (tc.id) toolCallsAccum[i].id = tc.id;
+                  if (tc.function?.name) toolCallsAccum[i].function.name += tc.function.name;
+                  if (tc.function?.arguments) toolCallsAccum[i].function.arguments += tc.function.arguments;
+                }
               }
             } catch (e) {
               console.error('Parse error:', e, trimmed);
@@ -119,9 +204,12 @@ class AIProvider {
       const latency = Date.now() - startTime;
       this.updateStats(latency, true);
       
+      const toolCalls = toolCallsAccum.filter(Boolean);
+      
       return {
         success: true,
         content: fullContent,
+        tool_calls: toolCalls,
         model: this.name,
         latency
       };

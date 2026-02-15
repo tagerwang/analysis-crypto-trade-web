@@ -15,6 +15,7 @@
   --border: #2f3336;
   --success: #00ba7c;
   --error: #f4212e;
+  --warning: #f59e0b;
 }
 
 body {
@@ -248,6 +249,18 @@ body {
   border: 1px solid var(--border);
   flex: 1;
   overflow: auto;
+}
+
+/* 警告样式（余额不足等） */
+.message.warning .message-content {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: var(--warning);
+}
+
+/* 错误样式 */
+.message.error .message-content {
+  background: rgba(244, 33, 46, 0.1);
+  border-color: var(--error);
 }
 
 .message-content pre {

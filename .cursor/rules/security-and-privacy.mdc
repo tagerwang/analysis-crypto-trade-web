@@ -1,0 +1,136 @@
+---
+description: 敏感信息保护和文档规范
+alwaysApply: true
+---
+
+# 敏感信息保护规则
+
+## 🔒 核心原则
+
+**绝对禁止在任何文件中直接写入明文敏感信息**，包括但不限于：
+- IP 地址
+- 域名
+- API 密钥
+- 服务器凭证
+- 数据库密码
+
+## ✅ 正确做法
+
+### 1. 环境变量引用
+
+在代码和脚本中，**必须使用环境变量**：
+
+```bash
+# ✅ 正确
+SERVER_IP="${SERVER_IP:-YOUR_SERVER_IP}"
+ssh $SERVER_USER@$SERVER_IP
+
+# ❌ 错误
+ssh root@45.32.114.70
+```
+
+```javascript
+// ✅ 正确
+const apiKey = process.env.DEEPSEEK_API_KEY;
+
+// ❌ 错误
+const apiKey = 'sk-013f4461081b4d74a765b3cc3fa47b18';
+```
+
+### 2. 文档中的敏感信息
+
+在 Markdown 文档中描述配置时，**使用占位符或变量名**：
+
+```markdown
+# ✅ 正确
+**部署目标**: https://${BASE_DOMAIN}
+**服务器**: ${SERVER_USER}@${SERVER_IP}
+**API Key**: ${DEEPSEEK_API_KEY}
+
+# ❌ 错误
+**部署目标**: https://trade-your.com
+**服务器**: root@45.32.114.70
+**API Key**: sk-013f4461081b4d74a765b3cc3fa47b18
+```
+
+### 3. 示例配置文件
+
+创建 `.example` 后缀的模板文件：
+
+- `.env.example` - 使用占位符如 `YOUR_SERVER_IP`、`sk-****`
+- `config.example.json` - 不包含真实值
+
+### 4. 日志和测试输出
+
+```bash
+# ✅ 正确 - 部分遮蔽
+echo "API Key: ${apiKey:0:10}..."
+
+# ❌ 错误 - 完整输出
+echo "API Key: $apiKey"
+```
+
+## 📋 检查清单
+
+在创建或修改文件前，确认：
+
+- [ ] 所有 IP 地址已替换为 `${SERVER_IP}` 或 `YOUR_SERVER_IP`
+- [ ] 所有域名已替换为 `${BASE_DOMAIN}` 或 `example.com`
+- [ ] 所有 API 密钥已脱敏为 `sk-****` 或 `${API_KEY_NAME}`
+- [ ] 脚本使用环境变量而非硬编码
+- [ ] 文档中的示例使用占位符
+
+## 🔍 常见场景
+
+### Shell 脚本
+
+```bash
+# 从 .env 加载变量
+if [ -f .env ]; then
+  export $(grep -v '^#' .env | xargs)
+fi
+
+# 使用变量并提供默认占位符
+SERVER_IP="${SERVER_IP:-YOUR_SERVER_IP}"
+```
+
+### 部署文档
+
+```markdown
+## 部署配置
+
+服务器: `${SERVER_USER}@${SERVER_IP}`
+域名: `${BASE_DOMAIN}`
+
+请在 `.env` 文件中配置实际值。
+```
+
+### 测试脚本
+
+```bash
+# 从环境变量读取
+BASE_URL="${BASE_URL:-https://example.com}"
+
+# 输出时脱敏
+echo "测试域名: ${BASE_URL}"
+```
+
+## ⚠️ 违规示例
+
+以下是**禁止**的写法：
+
+```markdown
+❌ 访问 https://trade-your.com
+❌ ssh root@45.32.114.70
+❌ API_KEY=sk-013f4461081b4d74a765b3cc3fa47b18
+❌ SERVER_IP=45.32.114.70
+```
+
+## 🎯 快速修复指南
+
+发现明文敏感信息时：
+
+1. **立即替换**为环境变量或占位符
+2. **检查 Git 历史**，考虑是否需要清理提交记录
+3. **更新 .env.example**，确保模板是脱敏的
+4. **轮换凭证**（如果已泄露到公开仓库）

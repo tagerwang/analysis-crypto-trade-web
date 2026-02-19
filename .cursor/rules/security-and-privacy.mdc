@@ -14,6 +14,12 @@ alwaysApply: true
 - 服务器凭证
 - 数据库密码
 
+### 规则文件与示例的脱敏要求
+
+- **本规则文件及所有 `.cursor/rules`、文档、示例代码**中，均不得写入任何具体敏感信息（包括真实或“仅作示例”的 IP、域名、API 密钥等）。
+- **错误示例**只使用抽象占位符（如 `<IP>`、`<域名>`、`<API_KEY>`）或文字描述（如「某域名」「某IP」），不写可被复制使用的具体值。
+- 不得用 192.0.2.x、example.com、sk-xxxx 等“看起来像示例”的具体值充当错误示例；占位符统一用尖括号或变量名（如 `YOUR_SERVER_IP`）。
+
 ## ✅ 正确做法
 
 ### 1. 环境变量引用
@@ -25,16 +31,16 @@ alwaysApply: true
 SERVER_IP="${SERVER_IP:-YOUR_SERVER_IP}"
 ssh $SERVER_USER@$SERVER_IP
 
-# ❌ 错误
-ssh root@45.32.114.70
+# ❌ 错误 - 不要写死 IP
+ssh root@<IP>
 ```
 
 ```javascript
 // ✅ 正确
 const apiKey = process.env.DEEPSEEK_API_KEY;
 
-// ❌ 错误
-const apiKey = 'sk-013f4461081b4d74a765b3cc3fa47b18';
+// ❌ 错误 - 不要硬编码密钥
+const apiKey = '<API_KEY>';
 ```
 
 ### 2. 文档中的敏感信息
@@ -47,17 +53,17 @@ const apiKey = 'sk-013f4461081b4d74a765b3cc3fa47b18';
 **服务器**: ${SERVER_USER}@${SERVER_IP}
 **API Key**: ${DEEPSEEK_API_KEY}
 
-# ❌ 错误
-**部署目标**: https://trade-your.com
-**服务器**: root@45.32.114.70
-**API Key**: sk-013f4461081b4d74a765b3cc3fa47b18
+# ❌ 错误 - 不要写死域名、IP、密钥
+**部署目标**: https://<域名>
+**服务器**: root@<IP>
+**API Key**: <API_KEY>
 ```
 
 ### 3. 示例配置文件
 
 创建 `.example` 后缀的模板文件：
 
-- `.env.example` - 使用占位符如 `YOUR_SERVER_IP`、`sk-****`
+- `.env.example` - 使用占位符如 `YOUR_SERVER_IP`、`YOUR_API_KEY`
 - `config.example.json` - 不包含真实值
 
 ### 4. 日志和测试输出
@@ -75,10 +81,11 @@ echo "API Key: $apiKey"
 在创建或修改文件前，确认：
 
 - [ ] 所有 IP 地址已替换为 `${SERVER_IP}` 或 `YOUR_SERVER_IP`
-- [ ] 所有域名已替换为 `${BASE_DOMAIN}` 或 `example.com`
-- [ ] 所有 API 密钥已脱敏为 `sk-****` 或 `${API_KEY_NAME}`
+- [ ] 所有域名已替换为 `${BASE_DOMAIN}` 或占位符
+- [ ] 所有 API 密钥已替换为环境变量或占位符，无明文
 - [ ] 脚本使用环境变量而非硬编码
 - [ ] 文档中的示例使用占位符
+- [ ] 规则文件与示例中未包含任何具体 IP、域名、密钥（错误示例仅用 `<IP>`、`<域名>`、`<API_KEY>` 或文字描述）
 
 ## 🔍 常见场景
 
@@ -109,7 +116,7 @@ SERVER_IP="${SERVER_IP:-YOUR_SERVER_IP}"
 
 ```bash
 # 从环境变量读取
-BASE_URL="${BASE_URL:-https://example.com}"
+BASE_URL="${BASE_URL:-https://YOUR_DOMAIN}"
 
 # 输出时脱敏
 echo "测试域名: ${BASE_URL}"
@@ -120,10 +127,10 @@ echo "测试域名: ${BASE_URL}"
 以下是**禁止**的写法：
 
 ```markdown
-❌ 访问 https://trade-your.com
-❌ ssh root@45.32.114.70
-❌ API_KEY=sk-013f4461081b4d74a765b3cc3fa47b18
-❌ SERVER_IP=45.32.114.70
+❌ 在文档/代码中写死 URL（如 https://某域名）
+❌ 在脚本中写死 ssh user@某IP
+❌ 在代码中写死 API_KEY=某密钥
+❌ 在配置中写死 SERVER_IP=某IP
 ```
 
 ## 🎯 快速修复指南

@@ -98,11 +98,12 @@ class ChatService {
         }
       }
 
-      // 做多/做空场景：若模型未调持仓量、多空比、买卖比，则服务端补调
-      const supplement = this.needsLongShortSupplement(userMessage, toolResults, forcedMCPCall);
-      if (supplement?.need && supplement.symbol) {
-        const extra = await this.supplementLongShortTools(supplement.symbol);
-        toolResults.push(...extra);
+      // 最多 3 轮补调（涨跌榜→批量行情、做多/做空→持仓量多空比买卖比），避免死循环；补调阶段不向用户暴露「失败」
+      for (let round = 1; round <= ChatService.MAX_SUPPLEMENT_ROUNDS; round++) {
+        const { added } = await this.runSupplementRound(toolResults, userMessage, forcedMCPCall);
+        if (added.length === 0) break;
+        toolResults.push(...added);
+        console.log(`[ChatService] 补调第${round}轮，新增 ${added.length} 条`);
       }
 
       // 构造 OpenAI 消息格式
@@ -127,23 +128,9 @@ class ChatService {
           : JSON.stringify({ error: tr.result.error })
       }));
 
-      // 再次调用AI，让它基于工具结果生成最终回复
+      // 再次调用AI，让它基于工具结果生成最终回复（补调用「补充调用」展示，仅最终仍失败才显示「调用失败」）
       const followUpSystemPrompt = this.buildSystemPrompt(sessionId, true, null, false);
-      
-      // 将工具结果转换为简化的文本格式，避免传递 tool_calls 结构
-      // 🔒 脱敏处理：不暴露具体的工具名称
-      const toolResultsText = toolResults.map((tr, index) => {
-        const toolInfo = `[数据源 ${index + 1}]`;
-        if (tr.result.success) {
-          return `${toolInfo} ✅ 成功\n数据:\n${JSON.stringify(tr.result.data, null, 2)}`;
-        } else {
-          return `${toolInfo} ❌ 失败\n错误: ${tr.result.error}`;
-        }
-      }).join('\n\n---\n\n');
-      
-      const toolSummary = `📊 数据获取情况 (共${toolResults.length}个数据源):\n${toolResults.map((tr, i) => 
-        `  ${i + 1}. 数据源 ${tr.result.success ? '✅ 成功' : '❌ 失败'}`
-      ).join('\n')}\n\n🔒 重要：不要在回复中提及具体的工具名称、API或数据源。直接基于数据给出分析。`;
+      const { toolSummary, toolResultsText } = this.buildToolSummaryAndText(toolResults, { showFailure: true });
       
       const followUpMessages = [
         { role: 'system', content: followUpSystemPrompt },
@@ -304,11 +291,12 @@ class ChatService {
         }
       }
 
-      // 做多/做空场景：若模型未调持仓量、多空比、买卖比，则服务端补调
-      const supplement = this.needsLongShortSupplement(userMessage, toolResults, forcedMCPCall);
-      if (supplement?.need && supplement.symbol) {
-        const extra = await this.supplementLongShortTools(supplement.symbol);
-        toolResults.push(...extra);
+      // 最多 3 轮补调，补调阶段不向用户暴露「失败」
+      for (let round = 1; round <= ChatService.MAX_SUPPLEMENT_ROUNDS; round++) {
+        const { added } = await this.runSupplementRound(toolResults, userMessage, forcedMCPCall);
+        if (added.length === 0) break;
+        toolResults.push(...added);
+        console.log(`[ChatService] 补调第${round}轮，新增 ${added.length} 条`);
       }
 
       onChunk({ type: 'tool_done' });
@@ -337,26 +325,9 @@ class ChatService {
           : JSON.stringify({ error: tr.result.error })
       }));
 
-      // 再次流式调用AI
+      // 再次流式调用AI（补调用「补充调用」展示，仅最终仍失败才显示「调用失败」）
       const followUpSystemPrompt = this.buildSystemPrompt(sessionId, true, null, false);
-      
-      // 将工具结果转换为简化的文本格式，避免传递 tool_calls 结构
-      // 🔒 脱敏处理：不暴露具体的工具名称
-      const toolResultsText = toolResults.map((tr, index) => {
-        const toolInfo = `[数据源 ${index + 1}]`;
-        if (tr.result.success) {
-          return `${toolInfo} ✅ 成功\n数据:\n${JSON.stringify(tr.result.data, null, 2)}`;
-        } else {
-          return `${toolInfo} ❌ 失败\n错误: ${tr.result.error}`;
-        }
-      }).join('\n\n---\n\n');
-      
-      const toolSummary = `📊 资源调用情况 (共${toolResults.length}个):\n${toolResults.map((tr, i) => 
-        `  ${i + 1}. ${tr.call.service}:${tr.call.tool} ${tr.result.success ? '✅ 成功' : '❌ 失败'}`
-      ).join('\n')}\n\n请在回答开头简要列出使用的工具及状态，然后基于数据给出分析。`;
-      // const toolSummary = `📊 数据获取情况 (共${toolResults.length}个数据源):\n${toolResults.map((tr, i) =>
-      //   `  ${i + 1}. 数据源 ${tr.result.success ? '✅ 成功' : '❌ 失败'}`
-      // ).join('\n')}\n\n🔒 重要：不要在回复中提及具体的工具名称、API或数据源。直接基于数据给出分析。`;
+      const { toolSummary, toolResultsText } = this.buildToolSummaryAndText(toolResults, { showFailure: true });
       
       const followUpMessages = [
         { role: 'system', content: followUpSystemPrompt },
@@ -383,15 +354,7 @@ class ChatService {
       console.log(`[ChatService] Follow-up completed. Success: ${followUpResult.success}, tool_calls: ${followUpResult.tool_calls?.length || 0}`);
       
       if (!followUpResult.success) {
-        // 🔒 脱敏处理：不暴露具体的工具名称
-        const toolResultsText = toolResults.map((tr, index) => {
-          if (tr.result.success) {
-            return `数据源 ${index + 1} 成功:\n${JSON.stringify(tr.result.data, null, 2)}`;
-          } else {
-            return `数据源 ${index + 1} 失败: ${tr.result.error}`;
-          }
-        }).join('\n\n');
-        
+        // 使用与 buildToolSummaryAndText 一致的展示（补充调用 / 仅最终失败才显示调用失败）
         finalContent = `我已经查询到以下信息：\n\n${toolResultsText}`;
         onChunk({ type: 'content', content: finalContent });
       } else {
@@ -577,7 +540,7 @@ class ChatService {
    * @returns {{ need: boolean, symbol: string }|null}
    */
   needsLongShortSupplement(userMessage, toolResults, forcedMCPCall) {
-    const longShortKeywords = /做多|做空|适合做多|适合做空|开多|开空|做多还是做空|期货走势|怎么样.*(做多|做空)/i;
+    const longShortKeywords = /做多|做空|适合做多|适合做空|开多|开空|做多还是做空|期货走势|怎么样.*(做多|做空)|开单|下单|怎么买/i;
     if (!longShortKeywords.test(userMessage)) return null;
 
     const called = new Set((toolResults || []).map(tr => tr.call?.tool));
@@ -607,14 +570,225 @@ class ChatService {
       tasks.map(async ({ id, tool, args }) => {
         try {
           const res = await MCPService.callTool(binance, tool, args);
+          if (!res.success) {
+            console.warn(`[ChatService] 补充调用失败 tool=${tool} symbol=${symbol} error=${res.error || '未返回数据'}`);
+          }
           return { id, call: { service: binance, tool, args }, result: res };
         } catch (err) {
+          console.warn(`[ChatService] 补充调用失败 tool=${tool} symbol=${symbol} error=${err.message}`);
           return { id, call: { service: binance, tool, args }, result: { success: false, error: err.message } };
         }
       })
     );
     console.log(`[ChatService] 做多/做空补调: ${symbol} 持仓量/多空比/买卖比 ${results.filter(r => r.result.success).length}/3 成功`);
-    return results;
+    return results.map((r) => ({
+      ...r,
+      isSupplement: true,
+      supplementLabel: '补充调用 ' + (r.call?.tool || '')
+    }));
+  }
+
+  /**
+   * 从 get_futures_top_gainers_losers 的返回中解析出 base symbol 列表（去 USDT 后缀）
+   * @param {Object} data - MCP 返回的 data
+   * @returns {string[]}
+   */
+  extractSymbolsFromGainersLosersResult(data) {
+    if (!data || typeof data !== 'object') return [];
+    const raw = [];
+    const push = (arr) => {
+      if (!Array.isArray(arr)) return;
+      arr.forEach((item) => {
+        const s = item?.symbol || item?.symbolName;
+        if (s && typeof s === 'string') raw.push(s.replace(/USDT$/i, ''));
+      });
+    };
+    push(data.top_gainers);
+    push(data.top_losers);
+    push(data.gainers);
+    push(data.losers);
+    return [...new Set(raw)].filter(Boolean);
+  }
+
+  /**
+   * 判断是否需要补调 get_futures_multiple_tickers（涨跌榜有结果但批量行情未成功或 symbols 为空）
+   * @param {Array} toolResults
+   * @returns {{ need: boolean, symbols: string[] }|null}
+   */
+  needsFuturesTickersSupplement(toolResults) {
+    let gainersLosersData = null;
+    let multipleTickersOk = false;
+    let multipleTickersSymbolsLength = 0;
+
+    for (const tr of toolResults || []) {
+      if (tr.call?.tool === 'get_futures_top_gainers_losers' && tr.result?.success && tr.result?.data) {
+        gainersLosersData = typeof tr.result.data === 'string' ? (() => { try { return JSON.parse(tr.result.data); } catch { return null; } })() : tr.result.data;
+      }
+      if (tr.call?.tool === 'get_futures_multiple_tickers') {
+        if (tr.result?.success) multipleTickersOk = true;
+        const syms = tr.call?.args?.symbols;
+        if (Array.isArray(syms)) multipleTickersSymbolsLength = syms.length;
+      }
+    }
+
+    if (!gainersLosersData) return null;
+    const symbols = this.extractSymbolsFromGainersLosersResult(gainersLosersData);
+    if (symbols.length === 0) return null;
+    if (multipleTickersOk && multipleTickersSymbolsLength > 0) return null;
+    return { need: true, symbols };
+  }
+
+  /**
+   * 补调：根据涨跌榜结果调用 get_futures_multiple_tickers
+   * @param {Array} toolResults - 当前已包含首轮 + 可能已有补调的结果
+   * @returns {Promise<Array<{id, call, result, isSupplement, supplementLabel}>>}
+   */
+  async supplementFuturesTickersFromGainersLosers(toolResults) {
+    const need = this.needsFuturesTickersSupplement(toolResults);
+    if (!need?.need || !need.symbols?.length) return [];
+
+    const binance = 'binance';
+    const tool = 'get_futures_multiple_tickers';
+    const args = { symbols: need.symbols };
+    try {
+      const res = await MCPService.callTool(binance, tool, args);
+      const one = {
+        id: `supplement-tickers-${Date.now()}`,
+        call: { service: binance, tool, args },
+        result: res,
+        isSupplement: true,
+        supplementLabel: '补充调用 get_futures_multiple_tickers'
+      };
+      if (!res.success) {
+        console.warn(`[ChatService] 补充调用失败 tool=get_futures_multiple_tickers symbols=${need.symbols.length}个 error=${res.error || '未返回数据'}`);
+      } else {
+        console.log(`[ChatService] 补充调用 get_futures_multiple_tickers(${need.symbols.length}个币种) 成功`);
+      }
+      return [one];
+    } catch (err) {
+      console.warn(`[ChatService] 补充调用失败 tool=get_futures_multiple_tickers error=${err.message}`);
+      return [{
+        id: `supplement-tickers-${Date.now()}`,
+        call: { service: binance, tool, args },
+        result: { success: false, error: err.message },
+        isSupplement: true,
+        supplementLabel: '补充调用 get_futures_multiple_tickers'
+      }];
+    }
+  }
+
+  /**
+   * 对首轮失败的 MCP 调用做一次补充重试（除涨跌榜、批量行情、做多/做空外，其它工具失败也支持补调）
+   * @param {Array} toolResults - 当前全部结果（含已有补调）
+   * @returns {Promise<Array<{ id, call, result, isSupplement, supplementLabel, retryOf }>>}
+   */
+  async supplementRetryFailedTools(toolResults) {
+    const retriedIds = new Set((toolResults || []).filter(r => r.retryOf).map(r => r.retryOf));
+    const toRetry = (toolResults || []).filter(
+      tr => !tr.result?.success && !tr.isSupplement && tr.call?.service && tr.call?.tool && !retriedIds.has(tr.id)
+    );
+    if (toRetry.length === 0) return [];
+
+    const added = [];
+    for (const tr of toRetry) {
+      const { service, tool, args } = tr.call;
+      try {
+        const res = await MCPService.callTool(service, tool, args || {});
+        added.push({
+          id: `supplement-retry-${tr.id}-${Date.now()}`,
+          call: { service, tool, args: args || {} },
+          result: res,
+          isSupplement: true,
+          supplementLabel: `补充调用 ${tool}`,
+          retryOf: tr.id
+        });
+        if (res.success) {
+          console.log(`[ChatService] 补充调用 ${service}:${tool} 重试成功`);
+        } else {
+          console.warn(`[ChatService] 补充调用失败 tool=${tool} error=${res.error || '未返回数据'}`);
+        }
+      } catch (err) {
+        added.push({
+          id: `supplement-retry-${tr.id}-${Date.now()}`,
+          call: { service, tool, args: args || {} },
+          result: { success: false, error: err.message },
+          isSupplement: true,
+          supplementLabel: `补充调用 ${tool}`,
+          retryOf: tr.id
+        });
+        console.warn(`[ChatService] 补充调用失败 tool=${tool} error=${err.message}`);
+      }
+    }
+    return added;
+  }
+
+  /**
+   * 执行一轮补调：涨跌榜→批量行情（非必要）、做多/做空→持仓量/多空比/买卖比、以及所有失败 MCP 的一次重试
+   * @param {Array} toolResults - 当前全部结果（含已有补调）
+   * @param {string} userMessage
+   * @param {{ symbols?: string[] }|null} forcedMCPCall
+   * @returns {Promise<{ added: Array }>}
+   */
+  async runSupplementRound(toolResults, userMessage, forcedMCPCall) {
+    const added = [];
+
+    // const tickerSupplements = await this.supplementFuturesTickersFromGainersLosers(toolResults);
+    // added.push(...tickerSupplements);
+
+    const longShort = this.needsLongShortSupplement(userMessage, toolResults, forcedMCPCall);
+    if (longShort?.need && longShort.symbol) {
+      const extra = await this.supplementLongShortTools(longShort.symbol);
+      added.push(...extra);
+    }
+
+    const retries = await this.supplementRetryFailedTools(toolResults);
+    added.push(...retries);
+
+    return { added };
+  }
+
+  /** 最大补调轮数，避免死循环 */
+  static MAX_SUPPLEMENT_ROUNDS = 2;
+
+  /**
+   * 生成给模型/用户看的工具汇总与数据正文（补调显示为「补充调用 xxx」，仅在所有补调结束后仍失败才显示「xxx 调用失败」）
+   * @param {Array} toolResults - 含 isSupplement、supplementLabel 的完整结果
+   * @param {{ showFailure: boolean }} options - showFailure 为 true 时才对原始失败项显示「调用失败」
+   */
+  buildToolSummaryAndText(toolResults, options = {}) {
+    const { showFailure = true } = options;
+
+    const lines = [];
+    const summaryLines = [];
+
+    (toolResults || []).forEach((tr, i) => {
+      const rawLabel = (tr.isSupplement && tr.supplementLabel)
+        ? tr.supplementLabel
+        : (tr.call?.tool ? `${tr.call.service}:${tr.call.tool}` : `数据源 ${i + 1}`);
+      const displayLabel = rawLabel || (tr.isSupplement ? '补充调用 ' + (tr.call?.tool || '未知') : `数据源 ${i + 1}`);
+      const success = tr.result?.success;
+
+      if (success) {
+        summaryLines.push(`  ${i + 1}. ${displayLabel} ✅ 成功`);
+        lines.push(`[数据源 ${i + 1}] ${displayLabel} ✅ 成功\n数据:\n${JSON.stringify(tr.result.data, null, 2)}`);
+      } else {
+        if (tr.isSupplement) {
+          const failLabel = displayLabel || ('补充调用 ' + (tr.call?.tool || '未知'));
+          summaryLines.push(`  ${i + 1}. ${failLabel}（未返回数据）`);
+          lines.push(`[数据源 ${i + 1}] ${failLabel}（未返回数据）`);
+        } else if (showFailure) {
+          summaryLines.push(`  ${i + 1}. ${tr.call?.tool || '数据'} 调用失败`);
+          lines.push(`[数据源 ${i + 1}] ❌ ${tr.call?.tool || '数据'} 调用失败\n错误: ${tr.result?.error || '未知'}`);
+        } else {
+          summaryLines.push(`  ${i + 1}. ${displayLabel}（待补全）`);
+          lines.push(`[数据源 ${i + 1}] ${displayLabel}（待补全）`);
+        }
+      }
+    });
+
+    const toolSummary = `📊 资源调用情况 (共${toolResults.length}个):\n${summaryLines.join('\n')}\n\n请在回答开头简要列出使用的工具及状态，然后基于数据给出分析。`;
+    const toolResultsText = lines.join('\n\n---\n\n');
+    return { toolSummary, toolResultsText };
   }
 
   async detectForcedMCPCall(userMessage) {
@@ -648,7 +822,7 @@ class ChatService {
       // 只要检测到币种（1个或多个）就检查是否需要调用MCP
       if (matchedSymbols.size > 0) {
         // 检测是否是价格/交易相关的问题
-        const priceKeywords = /价格|多少钱|多少|现价|当前价|行情|走势|分析|怎么样|如何|能涨|能跌|会涨|会跌|开多|开空|做多|做空|买入|卖出|上车|下车|建议|推荐|持仓量|多空比|买卖比|成交量|流动性|适合|机会/i;
+        const priceKeywords = /价格|多少钱|多少|现价|当前价|行情|走势|分析|怎么样|如何|能涨|能跌|会涨|会跌|开多|开空|做多|做空|买入|卖出|上车|下车|建议|推荐|持仓量|多空比|买卖比|成交量|流动性|适合|机会|开单|下单|怎么买/i;
         
         if (priceKeywords.test(userMessage)) {
           const symbolsArray = Array.from(matchedSymbols);
@@ -678,7 +852,7 @@ class ChatService {
     // 只要检测到币种（1个或多个）就检查是否需要调用MCP
     if (matchedSymbols.size > 0) {
       // 检测是否是价格/交易相关的问题
-      const priceKeywords = /价格|多少钱|多少|现价|当前价|行情|走势|分析|怎么样|如何|能涨|能跌|会涨|会跌|开多|开空|做多|做空|买入|卖出|上车|下车|建议|推荐|持仓量|多空比|买卖比|成交量|流动性|适合|机会/i;
+      const priceKeywords = /价格|多少钱|多少|现价|当前价|行情|走势|分析|怎么样|如何|能涨|能跌|会涨|会跌|开多|开空|做多|做空|买入|卖出|上车|下车|建议|推荐|持仓量|多空比|买卖比|成交量|流动性|适合|机会|开单|下单|怎么买/i;
       
       if (priceKeywords.test(userMessage)) {
         const symbolsArray = Array.from(matchedSymbols);
@@ -886,17 +1060,14 @@ ${toolsAvailable ? '10.' : '6.'} **明确标注技术指标的时间周期**（�
 ${toolsAvailable ? '❌ **严格禁止的行为**：\n- 禁止编造或使用训练数据中的价格、持仓量、多空比、买卖比、成交量\n- 禁止在没有调用工具的情况下给出具体数字\n- 禁止说"根据最新数据"但实际没有调用工具\n- 如果工具调用失败，必须明确告知用户"无法获取实时数据"' : ''}
 
 🔒 **信息脱敏规则**：
-- **仅当用户明确询问技术细节时才触发**：如"你使用了哪些工具"、"你调用了什么API"、"数据来源是什么"、"MCP服务是什么"、"你用的什么接口"
-- 触发时统一回复：**"内部服务，无权限访问。"**
-- **对于正常业务查询**（如推荐币种、分析走势、价格查询）：正常回答，不要提及此规则
-- 在正常回复中，禁止主动透露工具名称、API接口、MCP服务等技术细节
-- 可以说"基于实时数据分析"，但不说具体是哪个工具或API
+- **仅在用户直接追问技术实现时才触发**：用户原话明确问"你用了哪些工具/API"、"数据来源是什么"、"MCP/接口是什么"、"你调用了什么接口"时，才统一回复：**"内部服务，无权限访问。"**
+- **以下情况禁止输出"内部服务，无权限访问"**：用户问分析、推荐、价格、走势、买卖点、K线、做多做空等正常业务问题时，只做正常分析回答，绝不插入该句
+- 正常回复中不主动透露工具名、API、MCP 等；可说"基于实时数据"，不说是哪个工具或接口
 
-🚨 **MACD 铁律（重要！重要！重要！）**：
-- **死叉不能推荐做多、死叉不能推荐做多、死叉不能推荐做多**
-- **金叉不能推荐做空、金叉不能推荐做空、金叉不能推荐做空**
-- MACD 死叉时只能建议观望或做空，绝对不能建议做多
-- MACD 金叉时只能建议观望或做多，绝对不能建议做空
+🚨 **MACD 重要参考（非铁律）**：
+- 死叉：偏空信号，通常建议观望或做空，谨慎做多
+- 金叉：偏多信号，通常建议观望或做多，谨慎做空
+- 仅作重要参考，可结合资金费率、持仓量、多空比等综合判断后灵活运用
 </critical_rules>
 
 <tone>
@@ -930,6 +1101,8 @@ ${toolsAvailable ? '❌ **严格禁止的行为**：\n- 禁止编造或使用训
 
 
 <trading_analysis_rules>
+当用户询问「开单」「下单」「怎么买」时：**只做走势分析和买卖点建议**（方向、进场/止损/目标、仓位），**不要讲解交易所的下单流程、操作步骤或界面说明**。
+
 当用户询问交易建议时（开多/开空、做多/做空、买入/卖出），你必须：
 
 ${toolsAvailable ? '1. 🚨 **强制调用工具**：任何币种相关的问题，必须先调用工具获取实时数据，绝对不能使用训练数据\n2. **优先使用币安数据**：先调用可用工具获取实时数据\n3.' : '1.'} 给出明确的方向建议，不要含糊其辞
@@ -967,12 +1140,11 @@ BTC当前$67,234，跟随大盘上涨
 - 币安数据（默认）：不需要标注
 - 非币安数据：必须标注来源，如"（CoinGecko数据）"
 
-🚨 **MACD 方向铁律（必须遵守）**：
-- **小时死叉 → 禁止推荐做多**（只能建议观望或做空）
-- **小时金叉 → 禁止推荐做空**（只能建议观望或做多）
-- **死叉不能推荐做多、死叉不能推荐做多、死叉不能推荐做多**
-- **金叉不能推荐做空、金叉不能推荐做空、金叉不能推荐做空**
-- 日线/周线级别同样适用此规则，级别越大越重要
+🚨 **MACD 方向参考（重要但非铁律）**：
+- 小时死叉：偏空信号，通常建议观望或做空，谨慎做多
+- 小时金叉：偏多信号，通常建议观望或做多，谨慎做空
+- 日线/周线级别权重更高，可结合资金费率、多空比等综合判断
+- 特殊情况可灵活运用，不强求绝对禁止
 
 禁止模糊表述：
 ✗ "可能会涨"、"建议谨慎"、"仅供参考"
@@ -1041,9 +1213,9 @@ BTC当前$67,234，跟随大盘上涨
   
 - MACD: 趋势指标，金叉看涨，死叉看跌
   - **必须标注时间周期**：如"小时金叉"、"日线死叉"
-  - 金叉：DIF上穿DEA，看涨信号 → **只能推荐做多或观望，禁止推荐做空**
-  - 死叉：DIF下穿DEA，看跌信号 → **只能推荐做空或观望，禁止推荐做多**
-  - 🚨 **铁律：死叉不做多、金叉不做空**
+  - 金叉：DIF上穿DEA，偏多信号 → 通常建议做多或观望，谨慎做空
+  - 死叉：DIF下穿DEA，偏空信号 → 通常建议做空或观望，谨慎做多
+  - 🚨 **重要参考**：死叉偏空、金叉偏多，可结合其他指标综合判断
   
 - 成交量：放量突破可靠，缩量突破存疑
   - **必须标注时间周期**：如"小时成交量放大"、"日线缩量"
@@ -1258,7 +1430,7 @@ ${toolsAvailable ? `<mcp_tools>
 当用户消息包含以下任何内容时，必须立即调用MCP（🚨 默认使用合约数据）：
 - 价格相关：价格、多少钱、现价、当前价、行情 → 调用 \`get_futures_price\`（合约价格）
 - 分析相关：分析、怎么样、能涨吗、能跌吗、走势 → 🚨 必须调用 \`comprehensive_analysis_futures\`（不要用 comprehensive_analysis）
-- 交易相关：开多、开空、做多、做空、买入、卖出 → 并行调用 \`get_futures_price\` + \`get_realtime_funding_rate\` + \`get_open_interest\` + \`get_top_long_short_ratio\` + \`get_taker_buy_sell_ratio\`（5 个缺一不可）
+- 交易相关：开多、开空、做多、做空、买入、卖出、**开单、下单、怎么买** → 并行调用 \`get_futures_price\` + \`get_realtime_funding_rate\` + \`get_open_interest\` + \`get_top_long_short_ratio\` + \`get_taker_buy_sell_ratio\`（5 个缺一不可）。⚠️ **开单/下单/怎么买**：只做走势分析和买卖点建议，**不要讲解交易所的下单流程或操作步骤**
 - 资金费率：资金费率、费率、正费率、负费率 → 调用 \`get_realtime_funding_rate\` 或 \`get_extreme_funding_rates\`
 - 持仓量：持仓量、持仓、OI、Open Interest → 调用 \`get_open_interest\` 或 \`get_open_interest_hist\`
 - 多空比：多空比、多空分布、市场情绪 → 调用 \`get_top_long_short_ratio\` + \`get_global_long_short_ratio\`

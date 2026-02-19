@@ -222,6 +222,15 @@ pm2 monit
 - 错误日志：`logs/error.log`
 - 对话历史：`storage/chats/`
 
+**查看「补充调用」失败原因**（登录服务器后）：
+
+```bash
+# 查看最近补调失败记录（会标明是哪个 tool 未返回数据）
+pm2 logs crypto-ai-analyzer --lines 200 | grep "补充调用失败"
+
+# 示例输出：补充调用失败 tool=get_open_interest symbol=BTC error=未返回数据
+```
+
 ## 🐛 故障排查
 
 ### 服务无法启动
@@ -239,7 +248,7 @@ pm2 monit
 ### MCP数据获取失败
 
 1. 检查MCP服务URL是否可访问
-2. 查看服务器日志
+2. 查看服务器日志：`pm2 logs crypto-ai-analyzer | grep "补充调用失败"` 可看到具体是哪个工具（如 get_open_interest、get_futures_multiple_tickers）未返回数据及错误信息
 3. 验证网络防火墙设置
 
 ## 📝 开发指南

@@ -1,0 +1,26 @@
+---
+description: 除非用户明确要求，不执行任何 git 操作
+alwaysApply: true
+---
+
+# 不主动执行 Git 操作
+
+## 规则
+
+**除非用户明确要求，不要执行任何 git 相关命令。**
+
+包括但不限于：
+- `git add`、`git add .`
+- `git commit`
+- `git push`、`git pull`
+- `git checkout`、`git switch`、`git restore`
+- `git stash`
+- `git merge`、`git rebase`
+- `git rm`、`git mv`
+- 以及其它会改变工作区或暂存区的 git 命令
+
+## 正确做法
+
+- 只修改文件内容；是否暂存、提交、推送由用户自行决定。
+- 若需要用户执行 git 命令，用文字说明步骤即可，例如：「如需提交可执行：`git add . && git commit -m '...'`」。
+- 仅在用户明确说「帮我 add」「提交一下」「执行 git add」等时，才执行对应 git 操作。

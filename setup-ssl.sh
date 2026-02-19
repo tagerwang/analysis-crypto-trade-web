@@ -2,6 +2,7 @@
 
 # SSL 证书配置脚本
 # 使用 Let's Encrypt 为新域名申请免费 SSL 证书
+# 统一使用 certbot --nginx，无需在服务器上创建 /var/www/certbot
 
 set -e
 
@@ -15,6 +16,7 @@ SERVER_IP=$(grep "^SERVER_IP=" .env | cut -d '=' -f2)
 SERVER_USER=$(grep "^SERVER_USER=" .env | cut -d '=' -f2)
 SERVER_USER=${SERVER_USER:-root}
 NEW_DOMAINS=$(grep "^NEW_DOMAINS=" .env | cut -d '=' -f2)
+EXTRA_DOMAINS=$(grep "^EXTRA_DOMAINS=" .env | cut -d '=' -f2 | tr -d ' ')
 
 # 将逗号分隔的域名转换为数组
 IFS=',' read -ra DOMAINS <<< "$NEW_DOMAINS"
@@ -23,7 +25,8 @@ PRIMARY_DOMAIN="${DOMAINS[0]}"
 
 echo "🔐 开始配置 SSL 证书..."
 echo "📍 服务器: $SERVER_USER@$SERVER_IP"
-echo "📋 域名: $NEW_DOMAINS"
+echo "📋 主站域名: $NEW_DOMAINS"
+[ -n "$EXTRA_DOMAINS" ] && echo "📋 额外子域（单独证书）: $EXTRA_DOMAINS"
 echo ""
 
 # 检查服务器连接
@@ -50,9 +53,17 @@ fi
 
 echo ""
 echo "📋 将为以下域名申请证书："
+echo "   主站（一张证书）："
 for domain in "${DOMAINS[@]}"; do
     echo "   - $domain"
 done
+if [ -n "$EXTRA_DOMAINS" ]; then
+  echo "   额外子域（各单独证书）："
+  IFS=',' read -ra EXTRA_ARR <<< "$EXTRA_DOMAINS"
+  for domain in "${EXTRA_ARR[@]}"; do
+    echo "   - $domain"
+  done
+fi
 echo ""
 
 read -p "确认继续？(y/n): " CONFIRM
@@ -75,51 +86,65 @@ else
     echo "✅ certbot 已安装"
 fi
 
-# 将逗号分隔的域名转换为数组
+# 主站域名（由客户端展开传入）
 IFS=',' read -ra DOMAINS <<< "$NEW_DOMAINS"
 
 echo ""
-echo "🔐 申请 SSL 证书..."
+echo "🔐 申请主站 SSL 证书..."
 
-# 构建 certbot 域名参数
 CERTBOT_DOMAINS=""
 for domain in \${DOMAINS[@]}; do
     CERTBOT_DOMAINS="\$CERTBOT_DOMAINS -d \$domain"
 done
 
-# 申请证书
-certbot --nginx \
-    \$CERTBOT_DOMAINS \
-    --email $EMAIL \
-    --agree-tos \
-    --no-eff-email \
+certbot --nginx \\
+    \$CERTBOT_DOMAINS \\
+    --email $EMAIL \\
+    --agree-tos \\
+    --no-eff-email \\
     --redirect
 
-if [ \$? -eq 0 ]; then
-    echo ""
-    echo "✅ SSL 证书申请成功！"
-    echo ""
-    echo "📋 证书信息："
-    certbot certificates
-    
-    echo ""
-    echo "🔄 测试自动续期..."
-    certbot renew --dry-run
-    
-    if [ \$? -eq 0 ]; then
-        echo "✅ 自动续期配置成功"
-    else
-        echo "⚠️  自动续期测试失败，请检查配置"
-    fi
-else
-    echo "❌ SSL 证书申请失败"
-    echo "请检查："
-    echo "  1. DNS 是否已正确配置并生效"
-    echo "  2. 域名是否能够解析到服务器 IP"
-    echo "  3. 80 和 443 端口是否开放"
+if [ \$? -ne 0 ]; then
+    echo "❌ 主站 SSL 证书申请失败"
     exit 1
 fi
 
+# 额外子域：每个域名单独一张证书（certbot --nginx，无需 /var/www/certbot）
+EXTRA_DOMAINS_CSV="$EXTRA_DOMAINS"
+if [ -n "\$EXTRA_DOMAINS_CSV" ]; then
+  echo ""
+  echo "🔐 申请额外子域 SSL 证书..."
+  IFS=',' read -ra EXTRA_ARR <<< "\$EXTRA_DOMAINS_CSV"
+  for domain in \${EXTRA_ARR[@]}; do
+    domain=\$(echo "\$domain" | tr -d ' ')
+    [ -z "\$domain" ] && continue
+    echo "   - \$domain"
+    certbot --nginx -d "\$domain" \\
+      --email $EMAIL \\
+      --agree-tos \\
+      --no-eff-email \\
+      --redirect
+    if [ \$? -ne 0 ]; then
+      echo "⚠️  \$domain 证书申请失败，继续下一个"
+    fi
+  done
+fi
+
+echo ""
+echo "✅ SSL 证书申请完成"
+echo ""
+echo "📋 证书信息："
+certbot certificates
+
+echo ""
+echo "🔄 测试自动续期..."
+certbot renew --dry-run
+
+if [ \$? -eq 0 ]; then
+  echo "✅ 自动续期配置成功"
+else
+  echo "⚠️  自动续期测试失败，请检查配置"
+fi
 ENDSSH
 
 if [ $? -eq 0 ]; then
@@ -132,6 +157,13 @@ if [ $? -eq 0 ]; then
     for domain in "${DOMAINS[@]}"; do
         echo "   - https://$domain"
     done
+    if [ -n "$EXTRA_DOMAINS" ]; then
+      IFS=',' read -ra EXTRA_ARR <<< "$EXTRA_DOMAINS"
+      for domain in "${EXTRA_ARR[@]}"; do
+        domain=$(echo "$domain" | tr -d ' ')
+        [ -n "$domain" ] && echo "   - https://$domain"
+      done
+    fi
     echo ""
     echo "🔄 证书自动续期："
     echo "   Let's Encrypt 证书有效期 90 天"

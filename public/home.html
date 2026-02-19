@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>常用工具导航</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f0f12;
+      --surface: #18181c;
+      --surface-hover: #1f1f24;
+      --border: #2a2a30;
+      --text: #e4e4e7;
+      --text-muted: #71717a;
+      --accent: #3b82f6;
+      --accent-hover: #60a5fa;
+      --radius: 12px;
+      --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Noto Sans SC', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+    .page {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 4rem;
+    }
+    header {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+    header h1 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+    }
+    header p {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 1.25rem;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.5rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .card:hover {
+      border-color: rgba(59, 130, 246, 0.3);
+      box-shadow: var(--shadow);
+    }
+    .card h2 {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .card ul {
+      list-style: none;
+    }
+    .card li {
+      margin-bottom: 0.5rem;
+    }
+    .card li:last-child {
+      margin-bottom: 0;
+    }
+    .card a {
+      display: block;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.95rem;
+      padding: 0.4rem 0;
+      border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .card a:hover {
+      color: var(--accent-hover);
+      background: var(--surface-hover);
+      padding-left: 0.5rem;
+    }
+    .intro {
+      background: linear-gradient(135deg, var(--surface) 0%, rgba(59, 130, 246, 0.06) 100%);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem 1.75rem;
+      margin-bottom: 2rem;
+      font-size: 0.95rem;
+      color: var(--text-muted);
+    }
+    .intro strong {
+      color: var(--text);
+      font-weight: 500;
+    }
+    footer {
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1>常用工具导航</h1>
+      <p>精选开发、设计、学习与效率类网站，按分类整理，方便快速访问。</p>
+    </header>
+
+    <p class="intro">
+      <strong>使用说明：</strong>本站为工具与资源导航页。点击下方任意链接即可在新标签页中打开对应网站，按需收藏使用。
+    </p>
+
+    <div class="grid">
+      <section class="card">
+        <h2>开发与文档</h2>
+        <ul>
+          <li><a href="https://www.npmjs.com" target="_blank" rel="noopener">npm — 包管理</a></li>
+          <li><a href="https://developer.mozilla.org" target="_blank" rel="noopener">MDN — 前端文档</a></li>
+          <li><a href="https://github.com" target="_blank" rel="noopener">GitHub — 代码托管</a></li>
+          <li><a href="https://nodejs.org" target="_blank" rel="noopener">Node.js</a></li>
+          <li><a href="https://www.typescriptlang.org" target="_blank" rel="noopener">TypeScript</a></li>
+        </ul>
+      </section>
+      <section class="card">
+        <h2>问答与社区</h2>
+        <ul>
+          <li><a href="https://stackoverflow.com" target="_blank" rel="noopener">Stack Overflow</a></li>
+          <li><a href="https://segmentfault.com" target="_blank" rel="noopener">SegmentFault</a></li>
+          <li><a href="https://www.zhihu.com" target="_blank" rel="noopener">知乎</a></li>
+          <li><a href="https://v2ex.com" target="_blank" rel="noopener">V2EX</a></li>
+        </ul>
+      </section>
+      <section class="card">
+        <h2>检索与参考</h2>
+        <ul>
+          <li><a href="https://www.google.com" target="_blank" rel="noopener">Google</a></li>
+          <li><a href="https://www.bing.com" target="_blank" rel="noopener">Bing</a></li>
+          <li><a href="https://www.wikipedia.org" target="_blank" rel="noopener">Wikipedia</a></li>
+          <li><a href="https://devdocs.io" target="_blank" rel="noopener">DevDocs — 多语言文档聚合</a></li>
+        </ul>
+      </section>
+      <section class="card">
+        <h2>设计与资源</h2>
+        <ul>
+          <li><a href="https://www.figma.com" target="_blank" rel="noopener">Figma</a></li>
+          <li><a href="https://unsplash.com" target="_blank" rel="noopener">Unsplash — 免费图库</a></li>
+          <li><a href="https://icons8.com" target="_blank" rel="noopener">Icons8</a></li>
+          <li><a href="https://fonts.google.com" target="_blank" rel="noopener">Google Fonts</a></li>
+        </ul>
+      </section>
+      <section class="card">
+        <h2>效率与协作</h2>
+        <ul>
+          <li><a href="https://www.notion.so" target="_blank" rel="noopener">Notion</a></li>
+          <li><a href="https://trello.com" target="_blank" rel="noopener">Trello</a></li>
+          <li><a href="https://www.yuque.com" target="_blank" rel="noopener">语雀</a></li>
+          <li><a href="https://pastebin.com" target="_blank" rel="noopener">Pastebin — 代码片段分享</a></li>
+        </ul>
+      </section>
+      <section class="card">
+        <h2>学习与教程</h2>
+        <ul>
+          <li><a href="https://www.freecodecamp.org" target="_blank" rel="noopener">freeCodeCamp</a></li>
+          <li><a href="https://leetcode.com" target="_blank" rel="noopener">LeetCode</a></li>
+          <li><a href="https://www.runoob.com" target="_blank" rel="noopener">菜鸟教程</a></li>
+          <li><a href="https://doc.rust-lang.org" target="_blank" rel="noopener">Rust 官方文档</a></li>
+        </ul>
+      </section>
+    </div>
+
+    <footer>
+      本站为工具导航汇总，链接均指向第三方网站，请以各站实际内容为准。
+    </footer>
+  </div>
+</body>
+</html>

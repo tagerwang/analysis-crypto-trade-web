@@ -11,6 +11,65 @@
 - 💾 **历史记录**：自动保存对话，支持按日期管理
 - ⚡ **轻量高效**：原生JS实现，无框架依赖
 
+## 💻 本地使用
+
+本地开发按以下顺序启动（**顺序不能乱**）：先保证外网 API 可访问，再开 MCP，最后开本项目。
+
+### 1. 开启新加坡等地的机场
+
+币安等行情 API 在国内通常无法直连。先打开代理客户端（机场），节点选 **新加坡** 或其它可访问币安的地区。
+
+- 建议开启 **TUN / 增强模式**，让终端里的 Python、Node 也走代理
+- 未开机场时，常见现象：币安请求超时、MCP 工具无数据、AI 只能用硬编码备选币种
+
+### 2. 启动 MCP 服务器
+
+本项目默认连接本机 `http://127.0.0.1:8080/mcp`（见 `.env` 中的 `MCP_BINANCE_URL`）。MCP 在工作区的 **加密货币 MCP 服务器** 仓库（`crypto`）中。
+
+另开一个终端：
+
+```bash
+cd <MCP仓库路径>          # 工作区中的「加密货币 MCP 服务器」
+pip install -r requirements.txt   # 仅首次
+python3 unified_server.py         # 默认监听 8080
+```
+
+验证：
+
+```bash
+curl http://127.0.0.1:8080/health
+# 期望返回含 "status": "ok"
+```
+
+未启动 MCP 时，AI 助手日志会出现 `ECONNREFUSED 127.0.0.1:8080`。
+
+### 3. 启动 AI 助手
+
+回到本仓库：
+
+```bash
+cd analysis-crypto-trade-web
+npm install                 # 仅首次
+cp .env.example .env        # 仅首次，填入 DEEPSEEK_API_KEY 等
+npm start                   # 生产式启动
+# 或
+npm run dev                 # 开发模式（改代码自动重启）
+```
+
+浏览器打开 `http://localhost:3000`。
+
+| 命令 | 说明 |
+|------|------|
+| `npm start` | `node src/server.js`，普通启动 |
+| `npm run dev` | `node --watch src/server.js`，文件变更自动重启 |
+
+启动成功时终端应看到类似：
+
+```
+🚀 Crypto AI Analyzer running on port 3000
+🔌 MCP: binance=http://127.0.0.1:8080/mcp
+```
+
 ## 🚀 快速开始
 
 ### 前置要求
@@ -247,9 +306,11 @@ pm2 logs crypto-ai-analyzer --lines 200 | grep "补充调用失败"
 
 ### MCP数据获取失败
 
-1. 检查MCP服务URL是否可访问
-2. 查看服务器日志：`pm2 logs crypto-ai-analyzer | grep "补充调用失败"` 可看到具体是哪个工具（如 get_open_interest、get_futures_multiple_tickers）未返回数据及错误信息
-3. 验证网络防火墙设置
+本地开发请先按「本地使用」三步检查：机场是否开启（新加坡等节点）、MCP 是否在 8080 运行、`.env` 中 `MCP_BINANCE_URL` 是否为 `http://127.0.0.1:8080/mcp`。
+
+1. 检查MCP服务URL是否可访问：`curl http://127.0.0.1:8080/health`
+2. 查看日志中的「补充调用失败」，可看到具体是哪个工具（如 get_open_interest、get_futures_multiple_tickers）未返回数据
+3. 日志出现 `ECONNREFUSED 127.0.0.1:8080`：MCP 未启动；出现币安超时：机场未开或未走代理
 
 ## 📝 开发指南
 

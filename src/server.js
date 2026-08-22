@@ -11,6 +11,19 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+// 基础路径：若部署在 /crypto-ai 下，Nginx 可能把完整路径透传，此处统一剥掉前缀以便路由匹配
+const basePath = config.basePath || '';
+if (basePath) {
+  app.use((req, res, next) => {
+    if (req.path === basePath || req.path.startsWith(basePath + '/')) {
+      const rest = req.path.slice(basePath.length) || '/';
+      const q = req.url.includes('?') ? '?' + req.url.split('?')[1] : '';
+      req.url = rest + q;
+    }
+    next();
+  });
+}
+
 // 中间件
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
@@ -189,6 +202,68 @@ app.post('/crypto-ai-api/mcp/:service/:tool', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============ OAuth 登录代理（转发到 oauth-center）============
+const OAUTH_BASE = config.oauthCenterBaseUrl;
+
+function requireOAuthConfig(_req, res, next) {
+  if (!OAUTH_BASE) {
+    res.status(503).json({ success: false, message: '登录服务未配置' });
+    return;
+  }
+  next();
+}
+
+/** 获取登录页基础 URL，供前端拼 redirect_url */
+app.get('/crypto-ai-api/auth/config', (req, res) => {
+  if (!OAUTH_BASE) {
+    return res.status(503).json({ success: false, message: '登录服务未配置', loginPageBaseUrl: null });
+  }
+  res.json({ success: true, loginPageBaseUrl: OAUTH_BASE.replace(/\/$/, '') });
+});
+
+/** 用 auth_code + state 换 token */
+app.post('/crypto-ai-api/auth/exchange-code', requireOAuthConfig, async (req, res) => {
+  try {
+    const auth_code = req.body?.auth_code || req.query?.auth_code;
+    const state = req.body?.state || req.query?.state;
+    if (!auth_code || !state) {
+      return res.status(400).json({ success: false, message: '缺少 auth_code 或 state' });
+    }
+    const url = `${OAUTH_BASE.replace(/\/$/, '')}/api/auth/alipay/exchange-code`;
+    const proxyRes = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ auth_code, state })
+    });
+    const data = await proxyRes.json();
+    res.status(proxyRes.status).json(data);
+  } catch (err) {
+    console.error('Auth exchange-code proxy error:', err);
+    res.status(500).json({ success: false, message: err?.message || '兑换授权码失败' });
+  }
+});
+
+/** 用 token 校验并取用户信息 */
+app.post('/crypto-ai-api/auth/verify-token', requireOAuthConfig, async (req, res) => {
+  try {
+    const token = req.body?.token;
+    if (!token) {
+      return res.status(400).json({ success: false, message: '缺少 token 参数' });
+    }
+    const url = `${OAUTH_BASE.replace(/\/$/, '')}/api/auth/verify-token`;
+    const proxyRes = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token })
+    });
+    const data = await proxyRes.json();
+    res.status(proxyRes.status).json(data);
+  } catch (err) {
+    console.error('Auth verify-token proxy error:', err);
+    res.status(500).json({ success: false, message: err?.message || '验证 token 失败' });
   }
 });
 

@@ -641,7 +641,31 @@ class CryptoAIApp {
   }
 }
 
-// 初始化应用
-document.addEventListener('DOMContentLoaded', () => {
+// 鉴权通过后再初始化应用（由 auth.js 触发）
+function initAppAfterAuth() {
+  var auth = window.CryptoAIAuth;
+  var isWeChat = auth && auth.isWeChat ? auth.isWeChat() : false;
+  var user = auth && auth.getUser ? auth.getUser() : null;
+  var avatarEl = document.getElementById('userAvatar');
+  var nicknameEl = document.getElementById('userNickname');
+  var logoutBtn = document.getElementById('logoutBtn');
+  var userInfoEl = document.getElementById('userInfo');
+  if (isWeChat) {
+    if (userInfoEl) userInfoEl.style.display = 'none';
+    if (logoutBtn) logoutBtn.style.display = 'none';
+  } else {
+    if (avatarEl && user && user.avatar) {
+      avatarEl.src = user.avatar;
+      avatarEl.alt = user.nickname || '用户';
+    }
+    if (nicknameEl) {
+      nicknameEl.textContent = user && user.nickname ? user.nickname : '用户';
+    }
+    if (logoutBtn && auth && auth.logout) {
+      logoutBtn.addEventListener('click', function () { auth.logout(); });
+    }
+  }
   new CryptoAIApp();
-});
+}
+
+window.addEventListener('crypto-ai-auth-ready', initAppAfterAuth);

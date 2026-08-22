@@ -47,5 +47,11 @@ export default {
   storage: {
     retentionDays: parseInt(process.env.RETENTION_DAYS) || 30,
     maxChatSizeMB: parseInt(process.env.MAX_CHAT_SIZE_MB) || 10
-  }
+  },
+
+  /** OAuth 登录中心基础 URL，用于代理 exchange-code / verify-token；未配置时登录相关接口返回 503 */
+  oauthCenterBaseUrl: process.env.OAUTH_CENTER_BASE_URL || null,
+
+  /** 应用部署的基础路径（如 /crypto-ai），与 Nginx location 一致；未配置则为空表示根路径 */
+  basePath: (process.env.BASE_PATH || '').replace(/\/$/, '')
 };

@@ -16,7 +16,7 @@
     })();
   </script>
 </head>
-<body>
+<body class="auth-pending">
   <div class="app-container">
     <!-- 侧边栏 -->
     <aside class="sidebar" id="sidebar">
@@ -46,12 +46,19 @@
           </svg>
         </button>
         <h1>Crypto AI Analyzer</h1>
-        <div class="model-selector">
-          <select id="modelSelect">
-            <option value="auto">自动切换</option>
-            <option value="deepseek">DeepSeek</option>
-            <option value="qwen">千问</option>
-          </select>
+        <div class="header-right">
+          <div class="user-info" id="userInfo" title="已登录">
+            <img class="user-avatar" id="userAvatar" src="" alt="" width="28" height="28">
+            <span class="user-nickname" id="userNickname"></span>
+          </div>
+          <button type="button" class="btn-logout" id="logoutBtn" title="退出登录">退出</button>
+          <div class="model-selector">
+            <select id="modelSelect">
+              <option value="auto">自动切换</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="qwen">千问</option>
+            </select>
+          </div>
         </div>
       </header>
 
@@ -102,6 +109,7 @@
   <!-- 使用 unpkg CDN 作为主要源 -->
   <!-- <script src="https://unpkg.com/marked@11.1.1/marked.min.js"></script> -->
   <script src="marked.min.js"></script>
+  <script src="auth.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

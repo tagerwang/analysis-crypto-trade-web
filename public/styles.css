@@ -25,6 +25,11 @@ body {
   line-height: 1.6;
 }
 
+/* 鉴权未完成时隐藏主容器，避免闪屏后跳转 */
+body.auth-pending .app-container {
+  visibility: hidden;
+}
+
 .app-container {
   display: flex;
   height: 100vh;
@@ -114,6 +119,51 @@ body {
   flex: 1;
   font-size: 18px;
   font-weight: 600;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--bg-tertiary);
+}
+
+.user-nickname {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-logout {
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.btn-logout:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
 }
 
 .menu-toggle {

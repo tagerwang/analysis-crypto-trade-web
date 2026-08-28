@@ -85,7 +85,7 @@ ssh root@45.32.114.70
 const apiKey = process.env.DEEPSEEK_API_KEY;
 
 // ❌ 错误
-const apiKey = 'sk-013f4461081b4d74a765b3cc3fa47b18';
+const apiKey = 'sk-xxxxxxxx';
 ```
 
 ## 🔍 敏感信息类型
@@ -94,7 +94,7 @@ const apiKey = 'sk-013f4461081b4d74a765b3cc3fa47b18';
 
 - ✋ **IP 地址**: `45.32.114.70` → `${SERVER_IP}`
 - ✋ **域名**: `trade-your.com` → `${BASE_DOMAIN}`
-- ✋ **API 密钥**: `sk-013f...` → `${DEEPSEEK_API_KEY}` 或 `sk-****`
+- ✋ **API 密钥**: `sk-****` → `${DEEPSEEK_API_KEY}`
 - ✋ **用户名**: `root` → `${SERVER_USER}`
 - ✋ **数据库密码**: 任何密码 → `${DB_PASSWORD}`
 - ✋ **认证 Token**: 任何 token → `${AUTH_TOKEN}`

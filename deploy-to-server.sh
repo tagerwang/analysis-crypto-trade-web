@@ -34,7 +34,7 @@ MAIN_DOMAIN=${MAIN_DOMAIN:-$BASE_DOMAIN}
 
 APP_NAME="crypto-ai-analyzer"
 APP_PORT="3000"
-APP_PATH="/opt/crypto-ai-analyzer"
+APP_PATH="/opt/crypto-folder/analysis-crypto-trade-web"
 NGINX_LOCATION="/crypto-ai"
 BASE_URL="https://${MAIN_DOMAIN}"
 

@@ -1,6 +1,7 @@
 node_modules/
 .env
 storage/
+logs/
 *.log
 .DS_Store
 example.com.nginx.conf

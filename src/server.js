@@ -277,7 +277,7 @@ app.get('/health', (req, res) => {
 });
 
 // 启动服务器
-app.listen(config.port, () => {
+app.listen(config.port, process.env.HOST || '127.0.0.1', () => {
   console.log(`🚀 Crypto AI Analyzer running on port ${config.port}`);
   console.log(`📊 Available models: ${ModelManager.getAvailableModels().join(', ')}`);
   console.log(`🔗 Open http://localhost:${config.port}`);

@@ -2,7 +2,7 @@
 
 SERVER_IP="45.32.114.70"
 SERVER_USER="root"
-APP_DIR="/opt/crypto-ai-analyzer"
+APP_DIR="/opt/crypto-folder/analysis-crypto-trade-web"
 
 echo "🌏 连接到新加坡服务器测试通义千问API..."
 echo "服务器: $SERVER_USER@$SERVER_IP"
@@ -10,7 +10,7 @@ echo ""
 
 # 在服务器上创建并运行测试脚本
 ssh $SERVER_USER@$SERVER_IP << 'ENDSSH'
-cd /opt/crypto-ai-analyzer
+cd /opt/crypto-folder/analysis-crypto-trade-web
 
 echo "📝 创建测试脚本..."
 cat > test-qwen-api.js << 'EOF'

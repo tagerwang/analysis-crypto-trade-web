@@ -16,7 +16,7 @@ fi
 
 SERVER_IP="${SERVER_IP:-YOUR_SERVER_IP}"
 SERVER_USER="${SERVER_USER:-YOUR_SERVER_USER}"
-APP_PATH="${APP_PATH:-/opt/crypto-ai-analyzer}"
+APP_PATH="${APP_PATH:-/opt/crypto-folder/analysis-crypto-trade-web}"
 MCP_BINANCE_URL="${MCP_BINANCE_URL:-http://127.0.0.1:8080/mcp}"
 
 # 颜色
@@ -102,7 +102,7 @@ diagnose_server() {
   echo ""
   
   ssh $SERVER_USER@$SERVER_IP 'bash -s' << ENDSSH
-    APP_PATH="/opt/crypto-ai-analyzer"
+    APP_PATH="/opt/crypto-folder/analysis-crypto-trade-web"
     
     echo "1️⃣  PM2 应用状态"
     if command -v pm2 &>/dev/null; then

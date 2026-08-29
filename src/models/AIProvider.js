@@ -21,8 +21,9 @@ class AIProvider {
         model: this.apiConfig.model,
         messages,
         temperature: options.temperature || 0.7,
-        max_tokens: options.maxTokens || 2000,
-        stream: false
+        max_tokens: options.maxTokens || this.apiConfig.maxTokens || 2000,
+        stream: false,
+        ...(this.apiConfig.extraBody || {})
       };
 
       // 支持 tools 参数
@@ -70,12 +71,15 @@ class AIProvider {
       const data = await response.json();
       const message = data.choices[0].message;
       const latency = Date.now() - startTime;
+      const content = message.content
+        || message.reasoning_content
+        || '';
       
       this.updateStats(latency, true);
       
       return {
         success: true,
-        content: message.content || '',
+        content,
         tool_calls: message.tool_calls || [],
         model: this.name,
         latency
@@ -101,8 +105,9 @@ class AIProvider {
         model: this.apiConfig.model,
         messages,
         temperature: options.temperature || 0.7,
-        max_tokens: options.maxTokens || 2000,
-        stream: true
+        max_tokens: options.maxTokens || this.apiConfig.maxTokens || 2000,
+        stream: true,
+        ...(this.apiConfig.extraBody || {})
       };
 
       // 支持 tools 参数
@@ -174,6 +179,14 @@ class AIProvider {
                 onChunk({
                   type: 'content',
                   content: delta.content,
+                  model: this.name
+                });
+              } else if (delta.reasoning_content) {
+                // GLM 思考链：默认已关闭；若开启则作为正文流式输出，避免空回复
+                fullContent += delta.reasoning_content;
+                onChunk({
+                  type: 'content',
+                  content: delta.reasoning_content,
                   model: this.name
                 });
               }
@@ -253,7 +266,7 @@ class AIProvider {
 class ModelManager {
   constructor() {
     this.models = new Map();
-    this.currentMode = 'auto'; // 'auto', 'deepseek', 'qwen'
+    this.currentMode = 'auto'; // 'auto', 'deepseek', 'qwen', 'glm'
     this.initModels();
   }
 
@@ -266,6 +279,11 @@ class ModelManager {
     // 初始化千问
     if (config.ai.qwen.apiKey) {
       this.models.set('qwen', new AIProvider('qwen', config.ai.qwen));
+    }
+
+    // 初始化 GLM Coding Plan 订阅版
+    if (config.ai.glm.apiKey) {
+      this.models.set('glm', new AIProvider('glm', config.ai.glm));
     }
   }
 
@@ -285,6 +303,7 @@ class ModelManager {
     // 自动选择策略：优先使用DeepSeek（对复杂Prompt支持更好）
     const deepseek = this.models.get('deepseek');
     const qwen = this.models.get('qwen');
+    const glm = this.models.get('glm');
     
     // 如果DeepSeek可用且成功率可接受，优先使用
     if (deepseek && (deepseek.stats.calls === 0 || deepseek.stats.errors / deepseek.stats.calls < 0.3)) {
@@ -294,6 +313,10 @@ class ModelManager {
     // 如果DeepSeek失败率高，使用千问作为备用
     if (qwen && (qwen.stats.calls === 0 || qwen.stats.errors / qwen.stats.calls < 0.5)) {
       return qwen;
+    }
+
+    if (glm && (glm.stats.calls === 0 || glm.stats.errors / glm.stats.calls < 0.5)) {
+      return glm;
     }
     
     // 都不可用时，返回第一个可用模型

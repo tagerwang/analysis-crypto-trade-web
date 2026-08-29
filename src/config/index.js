@@ -32,6 +32,17 @@ export default {
       apiKey: process.env.QWEN_API_KEY,
       baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
       model: 'qwen3.5-plus' // 可选: qwen-turbo(最省) | qwen-flash(快且省) | qwen-plus(平衡)
+    },
+    // GLM Coding Plan 订阅版（OpenAI 兼容）：https://docs.bigmodel.cn/cn/coding-plan/quick-start
+    // 必须用套餐专属 Key，不能复用 DEEPSEEK/QWEN；团队套餐 Key 与平台普通 Key 也不通用
+    glm: {
+      apiKey: process.env.GLM_API_KEY,
+      baseURL: process.env.GLM_BASE_URL || 'https://open.bigmodel.cn/api/coding/paas/v4',
+      model: process.env.GLM_MODEL || 'glm-5.3',
+      maxTokens: parseInt(process.env.GLM_MAX_TOKENS, 10) || 8192,
+      extraBody: {
+        thinking: { type: process.env.GLM_THINKING === 'enabled' ? 'enabled' : 'disabled' }
+      }
     }
   },
   

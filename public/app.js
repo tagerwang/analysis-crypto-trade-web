@@ -139,7 +139,8 @@ class CryptoAIApp {
     const names = {
       'auto': '自动切换',
       'deepseek': 'DeepSeek',
-      'qwen': '千问'
+      'qwen': '千问',
+      'glm': 'GLM-5.3'
     };
     return names[model] || model;
   }

@@ -2,6 +2,21 @@ import ModelManager from '../models/AIProvider.js';
 import MCPService from './MCPService.js';
 import StorageService from './StorageService.js';
 import ValidationService from './ValidationService.js';
+import { spawn } from 'child_process';
+
+/**
+ * 记录一次经代理访问币安失败（达 /opt/mihomo/probe-settings.json 的 fail_threshold 后尝试自动检测节点）。
+ */
+function recordBinanceProxyFail() {
+  try {
+    spawn('python3', ['/opt/mihomo/binance-failcount.py', 'fail'], {
+      detached: true,
+      stdio: 'ignore',
+    }).unref();
+  } catch {
+    // 计数失败不影响对话
+  }
+}
 
 class ChatService {
   constructor() {
@@ -483,6 +498,7 @@ class ChatService {
             try {
               if (res.statusCode !== 200) {
                 console.error(`❌ 币安API返回错误状态码: ${res.statusCode}`);
+                recordBinanceProxyFail();
                 resolve(null);
                 return;
               }
@@ -503,6 +519,7 @@ class ChatService {
               resolve(symbols);
             } catch (parseError) {
               console.error('❌ 解析币安API响应失败:', parseError.message);
+              recordBinanceProxyFail();
               resolve(null);
             }
           });
@@ -510,11 +527,13 @@ class ChatService {
 
         req.on('error', (error) => {
           console.error('❌ 币安API请求失败:', error.message);
+          recordBinanceProxyFail();
           resolve(null);
         });
 
         req.on('timeout', () => {
           console.error('❌ 币安API请求超时');
+          recordBinanceProxyFail();
           req.destroy();
           resolve(null);
         });
@@ -523,6 +542,7 @@ class ChatService {
       });
     } catch (error) {
       console.error('❌ 获取币安交易对异常:', error.message);
+      recordBinanceProxyFail();
       return null;
     }
   }

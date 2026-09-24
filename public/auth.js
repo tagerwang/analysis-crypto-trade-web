@@ -1,40 +1,78 @@
 /**
- * 支付宝登录鉴权：未登录跳转 oauth-center，回调后用 auth_code/state 换 token 并拉取用户信息，
- * 结果存 localStorage；刷新时校验 token，失效则重新跳转登录。
- * 微信内访问时不要求登录，直接进入主应用。
+ * Casdoor OIDC 登录鉴权：所有浏览器（含微信内）未登录一律跳 Casdoor 登录页（含注册），
+ * 回调带 code/state，后端用 code 换 token 并拉用户信息，结果存 localStorage；
+ * 刷新时向后端校验 token，失效则重新跳转登录。
  */
 (function () {
   'use strict';
 
   const STORAGE_TOKEN_KEY = 'crypto_ai_auth_token';
   const STORAGE_USER_KEY = 'crypto_ai_auth_user';
+  const STORAGE_STATE_KEY = 'crypto_ai_oauth_state';
   const API_PREFIX = './crypto-ai-api';
 
   /**
-   * 是否在微信内置浏览器内
+   * 是否在微信内置浏览器内（微信内不强制登录）
    * @returns {boolean}
    */
   function isWeChat() {
     var ua = typeof navigator !== 'undefined' && navigator.userAgent ? navigator.userAgent : '';
-    return true // /MicroMessenger/i.test(ua);
+    return /MicroMessenger/i.test(ua);
+  }
+
+  /** 获取登录配置（authorize 端点 + clientId） */
+  function getAuthConfig() {
+    return fetch(API_PREFIX + '/auth/config')
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (data.success && data.loginPageBaseUrl && data.clientId) {
+          return { authorizeUrl: data.loginPageBaseUrl, clientId: data.clientId };
+        }
+        return null;
+      })
+      .catch(function () { return null; });
   }
 
   /**
-   * 从当前 URL 解析 auth_code 和 state
-   * @returns {{ auth_code: string | null, state: string | null }}
+   * 跳转 Casdoor 登录页；redirect_uri 为当前页，state 防 CSRF
+   */
+  function redirectToLogin() {
+    getAuthConfig().then(function (cfg) {
+      if (!cfg) {
+        showAuthStatus('登录服务未配置，请联系管理员', true);
+        return;
+      }
+      var state = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      try { sessionStorage.setItem(STORAGE_STATE_KEY, state); } catch (_) {}
+      var redirectUri = window.location.origin + window.location.pathname;
+      var url = cfg.authorizeUrl +
+        '?client_id=' + encodeURIComponent(cfg.clientId) +
+        '&redirect_uri=' + encodeURIComponent(redirectUri) +
+        '&response_type=code' +
+        '&scope=openid%20profile%20email' +
+        '&state=' + encodeURIComponent(state);
+      window.location.href = url;
+    });
+  }
+
+  /**
+   * 从当前 URL 解析 code 和 state
+   * @returns {{ code: string | null, state: string | null }}
    */
   function getAuthParams() {
     const params = new URLSearchParams(window.location.search);
-    const auth_code = params.get('auth_code');
-    const state = params.get('state');
-    return { auth_code: auth_code || null, state: state || null };
+    return {
+      code: params.get('code') || params.get('auth_code'),
+      state: params.get('state')
+    };
   }
 
   /**
-   * 清除 URL 上的 auth_code 和 state，避免刷新重复用码
+   * 清除 URL 上的 code 和 state，避免刷新重复用码
    */
   function clearAuthParamsFromUrl() {
     const url = new URL(window.location.href);
+    url.searchParams.delete('code');
     url.searchParams.delete('auth_code');
     url.searchParams.delete('state');
     const clean = url.pathname + url.search + url.hash;
@@ -42,48 +80,18 @@
   }
 
   /**
-   * 获取登录页基础 URL（从后端 /crypto-ai-api/auth/config）
-   * @returns {Promise<string | null>}
+   * 用 code + redirect_uri 换 token 和用户信息
    */
-  function getLoginPageBaseUrl() {
-    return fetch(API_PREFIX + '/auth/config')
-      .then(function (res) { return res.json(); })
-      .then(function (data) {
-        if (data.success && data.loginPageBaseUrl) return data.loginPageBaseUrl;
-        return null;
-      })
-      .catch(function () { return null; });
-  }
-
-  /**
-   * 构建登录跳转 URL，当前页为 redirect_url
-   * @param {string} loginPageBaseUrl
-   * @returns {string}
-   */
-  function buildLoginUrl(loginPageBaseUrl) {
-    const currentPageUrl = window.location.origin + window.location.pathname;
-    const base = (loginPageBaseUrl || '').replace(/\/$/, '');
-    return base + '/?redirect_url=' + encodeURIComponent(currentPageUrl);
-  }
-
-  /**
-   * 用 auth_code + state 换 token
-   * @param {string} auth_code
-   * @param {string} state
-   * @returns {Promise<{ success: boolean, token?: string, message?: string }>}
-   */
-  function exchangeCode(auth_code, state) {
+  function exchangeCode(code, redirectUri) {
     return fetch(API_PREFIX + '/auth/exchange-code', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ auth_code: auth_code, state: state })
+      body: JSON.stringify({ code: code, redirect_uri: redirectUri })
     }).then(function (res) { return res.json(); });
   }
 
   /**
    * 用 token 校验并取用户信息
-   * @param {string} token
-   * @returns {Promise<{ success: boolean, data?: { id, nickname, avatar, phone }, message?: string }>}
    */
   function verifyToken(token) {
     return fetch(API_PREFIX + '/auth/verify-token', {
@@ -116,9 +124,7 @@
   }
 
   /**
-   * 显示“登录中…”或错误提示
-   * @param {string} message
-   * @param {boolean} isError
+   * 显示"登录中…"或错误提示
    */
   function showAuthStatus(message, isError) {
     var el = document.getElementById('auth-status');
@@ -133,9 +139,6 @@
     el.style.color = isError ? 'var(--error,#f4212e)' : 'var(--text-primary,#e8eaed)';
   }
 
-  /**
-   * 移除 auth-status 节点
-   */
   function hideAuthStatus() {
     var el = document.getElementById('auth-status');
     if (el && el.parentNode) el.parentNode.removeChild(el);
@@ -151,52 +154,34 @@
   }
 
   /**
-   * 跳转到登录页；若无法获取 loginPageBaseUrl 则显示“登录服务未配置”
-   */
-  function redirectToLogin() {
-    getLoginPageBaseUrl().then(function (baseUrl) {
-      if (baseUrl) {
-        window.location.href = buildLoginUrl(baseUrl);
-      } else {
-        showAuthStatus('登录服务未配置，请联系管理员', true);
-      }
-    });
-  }
-
-  /**
-   * 主流程：根据 URL / 本地 token 决定换码、校验或跳转登录，通过后 initApp()
-   * 微信内访问时跳过登录，直接进入主应用
+   * 主流程：URL 带 code 则换码；否则本地 token 校验；都没有则跳登录
    */
   function runAuth() {
-    if (isWeChat()) {
-      initApp();
-      return;
-    }
-
     var params = getAuthParams();
-    var hasCode = params.auth_code && params.state;
 
-    if (hasCode) {
+    if (params.code) {
+      // 校验 state 防 CSRF
+      var savedState = null;
+      try { savedState = sessionStorage.getItem(STORAGE_STATE_KEY); } catch (_) {}
+      if (params.state && savedState && params.state !== savedState) {
+        showAuthStatus('登录状态校验失败，请重试', true);
+        clearAuthParamsFromUrl();
+        setTimeout(function () { redirectToLogin(); }, 1500);
+        return;
+      }
       showAuthStatus('登录中…', false);
-      exchangeCode(params.auth_code, params.state)
+      var redirectUri = window.location.origin + window.location.pathname;
+      exchangeCode(params.code, redirectUri)
         .then(function (data) {
+          clearAuthParamsFromUrl();
+          try { sessionStorage.removeItem(STORAGE_STATE_KEY); } catch (_) {}
           if (!data.success || !data.token) {
-            clearAuthParamsFromUrl();
             showAuthStatus(data.message || '登录失败，请重试', true);
             setTimeout(function () { redirectToLogin(); }, 1500);
             return;
           }
-          return verifyToken(data.token).then(function (userRes) {
-            if (!userRes.success || !userRes.data) {
-              clearAuthParamsFromUrl();
-              showAuthStatus(userRes.message || '获取用户信息失败', true);
-              setTimeout(function () { redirectToLogin(); }, 1500);
-              return;
-            }
-            setStoredAuth(data.token, userRes.data);
-            clearAuthParamsFromUrl();
-            initApp();
-          });
+          setStoredAuth(data.token, data.data);
+          initApp();
         })
         .catch(function () {
           clearAuthParamsFromUrl();
@@ -234,13 +219,7 @@
    */
   function logout() {
     clearStoredAuth();
-    getLoginPageBaseUrl().then(function (baseUrl) {
-      if (baseUrl) {
-        window.location.href = buildLoginUrl(baseUrl);
-      } else {
-        window.location.reload();
-      }
-    });
+    redirectToLogin();
   }
 
   // 暴露给全局，供 header 退出按钮等使用
@@ -255,8 +234,7 @@
       }
     },
     logout: logout,
-    buildLoginUrl: buildLoginUrl,
-    getLoginPageBaseUrl: getLoginPageBaseUrl,
+    redirectToLogin: redirectToLogin,
     isWeChat: isWeChat
   };
 

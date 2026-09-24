@@ -205,65 +205,117 @@ app.post('/crypto-ai-api/mcp/:service/:tool', async (req, res) => {
   }
 });
 
-// ============ OAuth 登录代理（转发到 oauth-center）============
-const OAUTH_BASE = config.oauthCenterBaseUrl;
+// ============ Casdoor OIDC 登录 ============
+// 未登录跳 Casdoor 登录页（含注册），回调带 code，后端换 token，前端存 localStorage
+const CASDOOR = {
+  origin: process.env.CASDOOR_ORIGIN || '',
+  // 服务端内部调用走本机回环（node 在 proxychains 下 127.0.0.1 直连，公网地址会被代理）
+  internalOrigin: process.env.CASDOOR_INTERNAL_ORIGIN || 'http://127.0.0.1:8000',
+  clientId: process.env.CASDOOR_CLIENT_ID || '',
+  clientSecret: process.env.CASDOOR_CLIENT_SECRET || ''
+};
+
+function casdoorConfigured() {
+  return !!(CASDOOR.clientId && CASDOOR.clientSecret);
+}
 
 function requireOAuthConfig(_req, res, next) {
-  if (!OAUTH_BASE) {
+  if (!casdoorConfigured()) {
     res.status(503).json({ success: false, message: '登录服务未配置' });
     return;
   }
   next();
 }
 
-/** 获取登录页基础 URL，供前端拼 redirect_url */
+/** 前端获取 OIDC 参数（clientId 公开可下发，secret 不下发） */
 app.get('/crypto-ai-api/auth/config', (req, res) => {
-  if (!OAUTH_BASE) {
+  if (!casdoorConfigured()) {
     return res.status(503).json({ success: false, message: '登录服务未配置', loginPageBaseUrl: null });
   }
-  res.json({ success: true, loginPageBaseUrl: OAUTH_BASE.replace(/\/$/, '') });
+  res.json({
+    success: true,
+    loginPageBaseUrl: `${CASDOOR.origin}/login/oauth/authorize`,
+    clientId: CASDOOR.clientId
+  });
 });
 
-/** 用 auth_code + state 换 token */
+/** 用 code 换 token，并拉取用户信息一并返回 */
 app.post('/crypto-ai-api/auth/exchange-code', requireOAuthConfig, async (req, res) => {
   try {
-    const auth_code = req.body?.auth_code || req.query?.auth_code;
-    const state = req.body?.state || req.query?.state;
-    if (!auth_code || !state) {
-      return res.status(400).json({ success: false, message: '缺少 auth_code 或 state' });
+    const code = req.body?.code || req.body?.auth_code;
+    const redirect_uri = req.body?.redirect_uri;
+    if (!code || !redirect_uri) {
+      return res.status(400).json({ success: false, message: '缺少 code 或 redirect_uri' });
     }
-    const url = `${OAUTH_BASE.replace(/\/$/, '')}/api/auth/alipay/exchange-code`;
-    const proxyRes = await fetch(url, {
+    const tokenUrl = `${CASDOOR.internalOrigin}/api/login/oauth/access_token`;
+    const tokenRes = await fetch(tokenUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ auth_code, state })
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        client_id: CASDOOR.clientId,
+        client_secret: CASDOOR.clientSecret,
+        code,
+        redirect_uri
+      })
     });
-    const data = await proxyRes.json();
-    res.status(proxyRes.status).json(data);
+    const tokenData = await tokenRes.json();
+    if (!tokenData.access_token) {
+      return res.status(401).json({ success: false, message: tokenData.error_description || '换码失败' });
+    }
+    const uiRes = await fetch(`${CASDOOR.internalOrigin}/api/userinfo`, {
+      headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
+    });
+    const ui = await uiRes.json();
+    if (!ui || ui.error) {
+      return res.status(401).json({ success: false, message: '获取用户信息失败' });
+    }
+    res.json({
+      success: true,
+      token: tokenData.access_token,
+      expiresIn: tokenData.expires_in,
+      data: {
+        id: ui.sub || ui.id || ui.name,
+        nickname: ui.name || ui.preferred_username || ui.sub,
+        email: ui.email || '',
+        avatar: ui.picture || ui.avatar || ''
+      }
+    });
   } catch (err) {
-    console.error('Auth exchange-code proxy error:', err);
-    res.status(500).json({ success: false, message: err?.message || '兑换授权码失败' });
+    console.error('Casdoor exchange-code error:', err);
+    res.status(500).json({ success: false, message: err?.message || '登录失败' });
   }
 });
 
-/** 用 token 校验并取用户信息 */
+/** 校验 token 是否仍有效（用于刷新页面时） */
 app.post('/crypto-ai-api/auth/verify-token', requireOAuthConfig, async (req, res) => {
   try {
     const token = req.body?.token;
     if (!token) {
       return res.status(400).json({ success: false, message: '缺少 token 参数' });
     }
-    const url = `${OAUTH_BASE.replace(/\/$/, '')}/api/auth/verify-token`;
-    const proxyRes = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token })
+    const uiRes = await fetch(`${CASDOOR.internalOrigin}/api/userinfo`, {
+      headers: { 'Authorization': `Bearer ${token}` }
     });
-    const data = await proxyRes.json();
-    res.status(proxyRes.status).json(data);
+    if (!uiRes.ok) {
+      return res.json({ success: false, message: 'token 已失效' });
+    }
+    const ui = await uiRes.json();
+    if (!ui || ui.error) {
+      return res.json({ success: false, message: 'token 已失效' });
+    }
+    res.json({
+      success: true,
+      data: {
+        id: ui.sub || ui.id || ui.name,
+        nickname: ui.name || ui.preferred_username || ui.sub,
+        email: ui.email || '',
+        avatar: ui.picture || ui.avatar || ''
+      }
+    });
   } catch (err) {
-    console.error('Auth verify-token proxy error:', err);
-    res.status(500).json({ success: false, message: err?.message || '验证 token 失败' });
+    console.error('Casdoor verify-token error:', err);
+    res.status(500).json({ success: false, message: err?.message || '验证失败' });
   }
 });
 

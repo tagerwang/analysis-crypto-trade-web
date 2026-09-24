@@ -127,19 +127,82 @@ body.auth-pending .app-container {
   gap: 12px;
 }
 
-.user-info {
+/* ===== 用户菜单（头像圆圈 + 下拉） ===== */
+.user-menu {
+  position: relative;
+}
+
+.user-trigger {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 4px 8px;
   color: var(--text-secondary);
   font-size: 14px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
 }
 
-.user-avatar {
-  width: 28px;
-  height: 28px;
+.user-trigger:hover,
+.user-trigger.active {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border-color: var(--border);
+}
+
+.user-avatar-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
-  object-fit: cover;
+  background: linear-gradient(135deg, var(--accent), #7c3aed);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.user-caret {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.user-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 140px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  padding: 6px;
+  z-index: 1000;
+}
+
+.user-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 9px 12px;
+  text-align: left;
+  font-size: 14px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.user-dropdown-item:hover {
+  color: var(--text-primary);
   background: var(--bg-tertiary);
 }
 
@@ -148,22 +211,6 @@ body.auth-pending .app-container {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.btn-logout {
-  padding: 6px 12px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: color 0.2s, border-color 0.2s;
-}
-
-.btn-logout:hover {
-  color: var(--text-primary);
-  border-color: var(--text-secondary);
 }
 
 .menu-toggle {

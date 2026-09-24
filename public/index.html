@@ -47,11 +47,6 @@
         </button>
         <h1>Crypto AI Analyzer</h1>
         <div class="header-right">
-          <div class="user-info" id="userInfo" title="已登录">
-            <img class="user-avatar" id="userAvatar" src="" alt="" width="28" height="28">
-            <span class="user-nickname" id="userNickname"></span>
-          </div>
-          <button type="button" class="btn-logout" id="logoutBtn" title="退出登录">退出</button>
           <div class="model-selector">
             <select id="modelSelect">
               <option value="auto">自动切换</option>
@@ -59,6 +54,16 @@
               <option value="qwen">千问</option>
               <option value="glm">GLM-5.3</option>
             </select>
+          </div>
+          <div class="user-menu" id="userMenu">
+            <button type="button" class="user-trigger" id="userTrigger" title="账号">
+              <span class="user-avatar-circle" id="userAvatarCircle"></span>
+              <span class="user-nickname" id="userNickname"></span>
+              <span class="user-caret">▾</span>
+            </button>
+            <div class="user-dropdown" id="userDropdown" hidden>
+              <button type="button" class="user-dropdown-item" id="logoutMenuItem">退出</button>
+            </div>
           </div>
         </div>
       </header>

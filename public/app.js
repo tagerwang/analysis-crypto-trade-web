@@ -647,24 +647,59 @@ function initAppAfterAuth() {
   var auth = window.CryptoAIAuth;
   var isWeChat = auth && auth.isWeChat ? auth.isWeChat() : false;
   var user = auth && auth.getUser ? auth.getUser() : null;
-  var avatarEl = document.getElementById('userAvatar');
+  var triggerBtn = document.getElementById('userTrigger');
+  var avatarCircle = document.getElementById('userAvatarCircle');
   var nicknameEl = document.getElementById('userNickname');
-  var logoutBtn = document.getElementById('logoutBtn');
-  var userInfoEl = document.getElementById('userInfo');
-  if (isWeChat) {
-    if (userInfoEl) userInfoEl.style.display = 'none';
-    if (logoutBtn) logoutBtn.style.display = 'none';
-  } else {
-    if (avatarEl && user && user.avatar) {
-      avatarEl.src = user.avatar;
-      avatarEl.alt = user.nickname || '用户';
+  var dropdownEl = document.getElementById('userDropdown');
+  var logoutMenuItem = document.getElementById('logoutMenuItem');
+
+  // 头像圆圈：取昵称首字（中文/字母/数字都取第一个字形）
+  function firstChar(str) {
+    if (!str) return '?';
+    var s = String(str).trim();
+    if (!s) return '?';
+    if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+      try {
+        var seg = new Intl.Segmenter('zh', { granularity: 'grapheme' }).segment(s);
+        var first = seg[Symbol.iterator]().next();
+        if (!first.done && first.value && first.value.segment) return first.value.segment.toUpperCase();
+      } catch (_) {}
     }
-    if (nicknameEl) {
-      nicknameEl.textContent = user && user.nickname ? user.nickname : '用户';
+    return s.charAt(0).toUpperCase();
+  }
+
+  var nickname = (user && (user.nickname || user.id)) || '用户';
+  if (avatarCircle) {
+    avatarCircle.textContent = firstChar(nickname);
+  }
+  if (nicknameEl) {
+    nicknameEl.textContent = nickname;
+  }
+
+  // 下拉开关：点击触发按钮切换；点击外部/Escape 关闭
+  function setDropdownOpen(open) {
+    if (!dropdownEl || !triggerBtn) return;
+    dropdownEl.hidden = !open;
+    triggerBtn.classList.toggle('active', open);
+  }
+
+  if (triggerBtn) {
+    triggerBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (dropdownEl) setDropdownOpen(dropdownEl.hidden);
+    });
+  }
+  document.addEventListener('click', function (e) {
+    if (dropdownEl && !dropdownEl.hidden && triggerBtn && !triggerBtn.contains(e.target)) {
+      setDropdownOpen(false);
     }
-    if (logoutBtn && auth && auth.logout) {
-      logoutBtn.addEventListener('click', function () { auth.logout(); });
-    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') setDropdownOpen(false);
+  });
+
+  if (logoutMenuItem && auth && auth.logout) {
+    logoutMenuItem.addEventListener('click', function () { auth.logout(); });
   }
   new CryptoAIApp();
 }
